@@ -2,7 +2,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { bendObject } from './bend.js';
 
 export const CARS = [
   { id: 'ferrari458', name: 'Ferrari 458', w: 2.26, len: 4.53, maxKmh: 300, accel: 13, handling: 10 },
@@ -39,7 +38,6 @@ function prepareProto(gltf, isPlayer) {
       if (m.envMapIntensity === undefined) m.envMapIntensity = 1;
     }
   });
-  bendObject(root);
   return { scene: root, headMats, tailMats };
 }
 
@@ -58,6 +56,14 @@ export function loadCar(id, lo, onProgress) {
 }
 export const hasCar = (id, lo) => !!protos[id + (lo ? '_lo' : '')];
 
+let blobTex = null;
+function getBlobTex() {
+  if (blobTex) return blobTex;
+  const c = document.createElement('canvas'); c.width = c.height = 128; const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 10, 64, 64, 64); g.addColorStop(0, 'rgba(0,0,0,0.55)'); g.addColorStop(0.6, 'rgba(0,0,0,0.3)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+  blobTex = new THREE.CanvasTexture(c); return blobTex;
+}
 // Build a drivable instance: clones the prototype, gives it its own paint material, sets up wheel pivots.
 export function instantiate(id, lo, colorHex) {
   const proto = protos[id + (lo ? '_lo' : '')] || protos[id + '_lo'];
@@ -90,9 +96,12 @@ export function instantiate(id, lo, colorHex) {
     pivot.userData.radius = Math.max(0.25, (box.max.y - box.min.y) / 2);
     wheels.push(pivot);
   }
+  // soft contact shadow under the car (grounds it even where the shadow map can't reach)
+  const blob = new THREE.Mesh(new THREE.PlaneGeometry(spec.w + 0.9, spec.len + 0.9), new THREE.MeshBasicMaterial({ map: getBlobTex(), transparent: true, depthWrite: false, opacity: 0.9 }));
+  blob.rotation.x = -Math.PI / 2; blob.position.y = 0.06; blob.renderOrder = 1; root.add(blob);
   // boost glow
-  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), new THREE.MeshBasicMaterial({ color: 0x66aaff, transparent: true, opacity: 0, depthWrite: false }));
-  glow.position.set(0, 0.35, spec.len / 2 + 0.2); glow.scale.set(2.2, 0.6, 2.5); root.add(glow);
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), new THREE.MeshBasicMaterial({ color: 0x5599ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  glow.position.set(0, 0.38, spec.len / 2 + 0.35); glow.scale.set(1.6, 0.45, 2.2); root.add(glow);
   root.userData = { spec, wheels, glow, paint: [...paintMats.values()], proto };
   return root;
 }

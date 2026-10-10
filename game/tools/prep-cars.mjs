@@ -213,21 +213,37 @@ async function prep(cfg) {
   // remove now-empty meshes
   for (const mesh of root.listMeshes()) if (!mesh.listPrimitives().length) mesh.dispose();
   const wheelInfo = {};
+  const bodyMesh = doc.createMesh('wheel_leftovers');
   for (const k in corners) {
-    const prims = corners[k]; if (!prims.length) continue;
-    const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
-    for (const p of prims) { const pb = primBounds(p); for (let i = 0; i < 3; i++) { mn[i] = Math.min(mn[i], pb.mn[i]); mx[i] = Math.max(mx[i], pb.mx[i]); } }
-    const c = [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2];
-    const mesh = doc.createMesh(`wheelmesh_${k}`);
+    let prims = corners[k]; if (!prims.length) continue;
+    // the tyre = the tallest part in this corner; its box gives the true axle centre and radius
+    let tyre = null, tyreH = 0;
+    for (const p of prims) { const pb = primBounds(p); const hgt = pb.mx[1] - pb.mn[1]; if (hgt > tyreH) { tyreH = hgt; tyre = pb; } }
+    const c = [(tyre.mn[0] + tyre.mx[0]) / 2, (tyre.mn[1] + tyre.mx[1]) / 2, (tyre.mn[2] + tyre.mx[2]) / 2];
+    const radius = tyreH / 2;
+    // parts that are not around that axle (inner shafts, hub caps of another wheel, ...) go back to the body
+    const keep = [];
     for (const p of prims) {
+      const pb = primBounds(p);
+      const pc = [(pb.mn[0] + pb.mx[0]) / 2, (pb.mn[1] + pb.mx[1]) / 2, (pb.mn[2] + pb.mx[2]) / 2];
+      const offAxle = Math.hypot(pc[1] - c[1], pc[2] - c[2]);
+      const inboard = Math.abs(pc[0]) < Math.abs(c[0]) - radius * 0.9;
+      if (offAxle > radius * 0.6 || inboard) bodyMesh.addPrimitive(p); else keep.push(p);
+    }
+    prims = keep;
+    const mesh = doc.createMesh(`wheelmesh_${k}`);
+    let mnx = Infinity, mxx = -Infinity;
+    for (const p of prims) {
+      const pb = primBounds(p); mnx = Math.min(mnx, pb.mn[0]); mxx = Math.max(mxx, pb.mx[0]);
       const pos = p.getAttribute('POSITION'); const a = pos.getArray().slice();
       for (let i = 0; i < a.length; i += 3) { a[i] -= c[0]; a[i + 1] -= c[1]; a[i + 2] -= c[2]; }
       pos.setArray(a); mesh.addPrimitive(p);
     }
     const node = doc.createNode(`wheel_${k}`).setMesh(mesh).setTranslation(c);
     scene.addChild(node);
-    wheelInfo[k] = { center: c.map((v) => +v.toFixed(3)), radius: +((mx[1] - mn[1]) / 2).toFixed(3), width: +(mx[0] - mn[0]).toFixed(3) };
+    wheelInfo[k] = { center: c.map((v) => +v.toFixed(3)), radius: +radius.toFixed(3), width: +(mxx - mnx).toFixed(3) };
   }
+  if (bodyMesh.listPrimitives().length) scene.addChild(doc.createNode('wheel_leftovers').setMesh(bodyMesh)); else bodyMesh.dispose();
 
   // ---- materials: name the body material so the game can recolour it
   let bodyFound = 0;

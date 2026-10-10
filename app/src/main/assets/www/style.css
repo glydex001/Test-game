@@ -89,3 +89,13 @@ button { border: 0; outline: 0; font-family: inherit; cursor: pointer; }
 #brandline span { font-size: 11px; font-weight: 800; color: #846839; letter-spacing: 1px; text-transform: uppercase; }
 .iconbtn.cam { right: 70px; font-size: 22px; }
 #title { text-shadow: 0 3px 0 #17283C, 0 6px 16px rgba(0,0,0,.5); }
+
+/* ---------- damage ---------- */
+#dmgbar { position: absolute; top: 14px; left: 14px; display: flex; align-items: center; gap: 8px; }
+#dmgbar span { font-size: 20px; }
+#dmgtrack { width: 150px; height: 12px; border-radius: 6px; background: rgba(0,0,0,.45); overflow: hidden; }
+#dmgfill { height: 100%; width: 100%; background: #22c55e; transition: width .2s, background .3s; }
+#totaled { position: absolute; left: 50%; top: 34%; transform: translateX(-50%); text-align: center; pointer-events: none; }
+#totaled .totaltxt { color: #fff; font-size: 30px; font-weight: 900; text-shadow: 0 3px 8px rgba(0,0,0,.6); margin-bottom: 12px; }
+#btnFix { pointer-events: auto; padding: 16px 36px; font-size: 28px; font-weight: 900; color: #17283C; background: #D0B46C; border-radius: 30px; box-shadow: 0 8px 0 #846839; }
+#btnFix:active { transform: translateY(6px); box-shadow: 0 2px 0 #846839; }

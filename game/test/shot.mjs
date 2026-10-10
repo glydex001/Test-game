@@ -22,7 +22,7 @@ const configs = (process.argv[2] || '0,country,day').split(';').map((c) => c.spl
 for (const [car, world, time, cam] of configs) {
   await page.goto('http://localhost:8765/');
   await page.evaluate(({ car, world, time, cam }) => {
-    localStorage.setItem('kidcars-v2', JSON.stringify({ car: +car, world, time, traffic: true, sound: false, tilt: false, cam: +(cam || 0) }));
+    localStorage.setItem('kidcars-v3', JSON.stringify({ car: +car, world, time, traffic: true, sound: false, tilt: false, cam: +(cam || 0) }));
   }, { car, world, time, cam });
   await page.reload();
   await page.waitForFunction(() => window.__kidcars && window.__kidcars.state() === 'menu' && document.getElementById('loading').classList.contains('hidden'), null, { timeout: 180000 });
@@ -37,7 +37,7 @@ for (const [car, world, time, cam] of configs) {
   await page.keyboard.down('Space'); await page.waitForTimeout(2500);
   await page.screenshot({ path: `shots/drive2-${tag}.png` });
   await page.keyboard.up('Space'); await page.keyboard.up('ArrowUp');
-  const g = await page.evaluate(() => ({ speed: Math.round(window.__kidcars.G.speed * 3.6), dist: Math.round(window.__kidcars.G.dist), state: window.__kidcars.state() }));
+  const g = await page.evaluate(() => ({ speed: Math.round(Math.abs(window.__kidcars.body().vf) * 3.6), dist: Math.round(window.__kidcars.G.dist), state: window.__kidcars.state() }));
   console.log('STATE', tag, JSON.stringify(g));
 }
 console.log('ERRORS', errors.length ? '\n' + errors.join('\n') : 'none');

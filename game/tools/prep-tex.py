@@ -1,6 +1,6 @@
 # Prepares generated textures for the game: tiles -> webp, cut-outs -> chroma-keyed webp with alpha.
 import numpy as np, os, sys
-from PIL import Image
+from PIL import Image, ImageFilter
 
 RAW = '/home/claude/kidcars/tex/raw'
 OUT = '/home/claude/kidcars/game/www/tex'
@@ -12,6 +12,7 @@ TILES = {  # name: size
 }
 CUTOUTS = {  # name: (max width, crop box or None, soft, hard)
     'tree_oak': (768, None, 18, 60), 'tree_pine': (768, (60, 60, -20, -1), 18, 60), 'tree_snowpine': (768, None, 30, 90), 'cactus': (640, None, 30, 90),
+    'leaf_oak': (512, 'frac:0,0.06,1,1', 30, 90), 'leaf_pine': (512, None, 30, 90), 'grass_tuft': (512, None, 30, 90), 'clouds': (2048, None, 40, 120, True),
     'hills_green': (2048, None, 30, 90, True), 'mesas_desert': (2048, 'frac:0,0.335,1,0.735', 30, 90, True), 'mountains_snow': (2048, None, 25, 80, True), 'skyline_city': (2048, None, 30, 90, True),
 }
 
@@ -62,9 +63,28 @@ for name, cfg in CUTOUTS.items():
                 if run >= 10: cut = y - 9; break
             arr[:cut, x, 3] = 0
         ka = Image.fromarray(arr, 'RGBA')
+    if name == 'clouds':
+        arr = np.asarray(ka).astype(np.float32); lum = arr[:, :, :3].mean(axis=2, keepdims=True)
+        arr[:, :, :3] = np.clip(lum * 1.08 + 10, 0, 255); ka = Image.fromarray(arr.astype(np.uint8), 'RGBA')
     # trim fully transparent margins
     bbox = ka.getchannel('A').point(lambda v: 255 if v > 8 else 0).getbbox()
     if bbox: ka = ka.crop(bbox)
     if ka.width > maxw: ka = ka.resize((maxw, int(ka.height * maxw / ka.width)), Image.LANCZOS)
     ka.save(f'{OUT}/{name}.webp', quality=85)
     print('cutout', name, ka.size, 'bg', bg.astype(int))
+
+# ---------- asphalt normal + roughness maps from the asphalt tile
+asp = np.asarray(Image.open(f'{OUT}/asphalt.webp').convert('L')).astype(np.float32) / 255
+h = np.asarray(Image.fromarray((asp * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.8))).astype(np.float32) / 255
+dx = np.roll(h, -1, axis=1) - np.roll(h, 1, axis=1); dy = np.roll(h, -1, axis=0) - np.roll(h, 1, axis=0)
+strength = 6.0
+nx = -dx * strength; ny = -dy * strength; nz = np.ones_like(h)
+l = np.sqrt(nx * nx + ny * ny + nz * nz); nx /= l; ny /= l; nz /= l
+nrm = np.dstack([(nx * 0.5 + 0.5) * 255, (ny * 0.5 + 0.5) * 255, (nz * 0.5 + 0.5) * 255]).astype(np.uint8)
+Image.fromarray(nrm).save(f'{OUT}/asphalt_n.webp', quality=85)
+low = np.asarray(Image.fromarray((asp * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(18))).astype(np.float32) / 255
+rough = np.clip(0.55 + (low - low.mean()) * 2.5 + (asp - 0.5) * 0.3, 0.35, 0.95)
+Image.fromarray((rough * 255).astype(np.uint8)).save(f'{OUT}/asphalt_r.webp', quality=80)
+for f in ['lensflare0', 'lensflare3']:
+    Image.open(f'{RAW}/{f}.png').convert('RGBA').save(f'{OUT}/{f}.webp', quality=90)
+print('asphalt maps + flares')
