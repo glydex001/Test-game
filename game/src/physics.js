@@ -45,7 +45,7 @@ export class CarBody {
     // steering: yaw rate grows with speed at low speed, tapers at high speed
     const sp = Math.abs(vf);
     const steerGain = handling * 0.09;
-    const want = this.steer * steerGain * clamp(sp / 6, 0, 1) * (1 / (1 + sp / 35)) * Math.sign(vf || 1);
+    const want = -this.steer * steerGain * clamp(sp / 6, 0, 1) * (1 / (1 + sp / 35)) * Math.sign(vf || 1);
     this.yawRate += (want - this.yawRate) * Math.min(1, 8 * dt);
     this.h += this.yawRate * dt;
     this.steerAngle += (this.steer * 0.42 - this.steerAngle) * Math.min(1, 10 * dt);

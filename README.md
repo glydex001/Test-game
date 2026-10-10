@@ -12,7 +12,8 @@ Download the newest `KidCars-v1.N.apk` from the Releases page onto the phone and
 
 ## Playing
 
-- Landscape only. Big buttons: ◀ ▶ steer, **GO** accelerates, **STOP** brakes, 📣 horn, ⚡ boost, 📷 changes camera.
+- Landscape only. Steering wheel (drag to turn, springs back), **GO** and **STOP** pedals, 📣 horn, ⚡ boost, 📷 changes camera.
+  The garage has a 🎡/🕹️ switch to use big ◀ ▶ buttons instead of the wheel.
 - Garage: swipe through the seven cars with ‹ ›, pick a colour, pick a world (country / desert / city / snow / **Lenasia**)
   and time of day (day / sunset / night), toggle traffic, sound, and tilt-to-steer.
 - Lenasia mode is a free-roam map of the real suburb built from OpenStreetMap data (`app/src/main/assets/www/lenasia.json`,

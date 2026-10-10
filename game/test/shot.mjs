@@ -33,7 +33,10 @@ for (const [car, world, time, cam] of configs) {
   await page.keyboard.down('ArrowUp');
   await page.waitForTimeout(6000);
   await page.screenshot({ path: `shots/drive-${tag}.png` });
+  const h0 = await page.evaluate(() => window.__kidcars.body().h);
   await page.keyboard.down('ArrowRight'); await page.waitForTimeout(1000); await page.keyboard.up('ArrowRight');
+  const h1 = await page.evaluate(() => window.__kidcars.body().h);
+  console.log('STEER right: heading change', (h1 - h0).toFixed(3), '(negative = turned right, correct)');
   await page.keyboard.down('Space'); await page.waitForTimeout(2500);
   await page.screenshot({ path: `shots/drive2-${tag}.png` });
   await page.keyboard.up('Space'); await page.keyboard.up('ArrowUp');

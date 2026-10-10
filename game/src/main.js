@@ -19,7 +19,7 @@ const randi = (a, b) => Math.floor(rand(a, b + 1));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 const SAVE_KEY = 'kidcars-v3';
-let settings = { car: 0, color: 0, world: 'country', time: 'day', traffic: true, sound: true, tilt: false, cam: 0 };
+let settings = { car: 0, color: 0, world: 'country', time: 'day', traffic: true, sound: true, tilt: false, cam: 0, controls: 'wheel' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); } catch (e) { /* ignore */ }
 if (!CARS[settings.car]) settings.car = 0;
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ } }
@@ -146,7 +146,30 @@ function applyTime() {
 }
 
 // ------------------------------------------------------------------ input (with a global release so no button can stick)
-const input = { left: false, right: false, gas: false, brake: false, boost: false, tilt: 0 };
+const input = { left: false, right: false, gas: false, brake: false, boost: false, tilt: 0, wheel: 0 };
+// steering wheel: drag to turn (relative), springs back when released
+const wheelEl = $('wheel'), wheelImg = $('wheelimg');
+let wheelAngle = 0, wheelDrag = null; const WHEEL_MAX = 140;
+function wheelAngleOf(e) { const r = wheelEl.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180 / Math.PI; }
+wheelEl.addEventListener('pointerdown', (e) => { e.preventDefault(); wheelEl.setPointerCapture(e.pointerId); wheelDrag = { id: e.pointerId, a0: wheelAngleOf(e), w0: wheelAngle }; Sound.init(); Sound.resume(); });
+wheelEl.addEventListener('pointermove', (e) => {
+  if (!wheelDrag || e.pointerId !== wheelDrag.id) return;
+  let da = wheelAngleOf(e) - wheelDrag.a0; while (da > 180) da -= 360; while (da < -180) da += 360;
+  wheelAngle = clamp(wheelDrag.w0 + da, -WHEEL_MAX, WHEEL_MAX); wheelImg.style.transform = `rotate(${wheelAngle}deg)`;
+});
+const wheelUp = (e) => { if (wheelDrag && e.pointerId === wheelDrag.id) wheelDrag = null; };
+wheelEl.addEventListener('pointerup', wheelUp); wheelEl.addEventListener('pointercancel', wheelUp);
+wheelEl.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+function updateWheel(dt) {
+  if (!wheelDrag) { wheelAngle += (0 - wheelAngle) * Math.min(1, 9 * dt); if (Math.abs(wheelAngle) < 0.3) wheelAngle = 0; wheelImg.style.transform = `rotate(${wheelAngle}deg)`; }
+  input.wheel = wheelAngle / WHEEL_MAX;
+}
+function applyControlsMode() {
+  const wheel = settings.controls === 'wheel';
+  $('leftpad').classList.toggle('hidden', wheel); $('wheel').classList.toggle('hidden', !wheel);
+  $('rightpad').classList.toggle('pedals', wheel);
+  $('optCtl').textContent = wheel ? '🎡' : '🕹️';
+}
 const held = new Map();   // pointerId -> key
 function bindHold(id, key) {
   const el = $(id);
@@ -213,6 +236,7 @@ document.querySelectorAll('#worldRow .opt').forEach((b) => b.addEventListener('p
 document.querySelectorAll('#timeRow .opt').forEach((b) => b.addEventListener('pointerdown', () => { settings.time = b.dataset.time; save(); applyTime(); refreshMenu(); }));
 $('optTraffic').addEventListener('pointerdown', () => { settings.traffic = !settings.traffic; save(); refreshMenu(); });
 $('optSound').addEventListener('pointerdown', () => { settings.sound = !settings.sound; save(); Sound.init(); Sound.setOn(settings.sound); refreshMenu(); });
+$('optCtl').addEventListener('pointerdown', () => { settings.controls = settings.controls === 'wheel' ? 'buttons' : 'wheel'; save(); applyControlsMode(); });
 $('optTilt').addEventListener('pointerdown', () => {
   settings.tilt = !settings.tilt; save(); refreshMenu();
   if (settings.tilt && typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) DeviceOrientationEvent.requestPermission().catch(() => {});
@@ -309,6 +333,7 @@ function update(dt) {
     G.boostFuel = G.boosting ? Math.max(0, G.boostFuel - dt / 3) : Math.min(1, G.boostFuel + dt / 9);
     boostFill.style.width = (G.boostFuel * 100).toFixed(0) + '%'; boostBtn.classList.toggle('cooling', G.boostFuel < 0.05);
     let steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    if (settings.controls === 'wheel') { updateWheel(dt); if (steer === 0) steer = Math.sign(input.wheel) * Math.pow(Math.abs(input.wheel), 1.3); }
     if (settings.tilt && steer === 0) steer = input.tilt;
     if (G.totaled) { body.throttle = 0; body.brake = 0.4; body.steer = 0; body.yawRate = G.spin; G.spin *= Math.pow(0.4, dt); }
     else { body.throttle = input.gas ? 1 : 0; body.brake = input.brake ? 1 : 0; body.steer = steer; }
@@ -374,7 +399,7 @@ function update(dt) {
       const dx = tx - b.x, dz = tz - b.z;
       const wantH = Math.atan2(-dx, -dz);
       let dh = wantH - b.h; while (dh > Math.PI) dh -= Math.PI * 2; while (dh < -Math.PI) dh += Math.PI * 2;
-      b.steer = clamp(dh * 2.2, -1, 1);
+      b.steer = clamp(-dh * 2.2, -1, 1);
       // keep distance from whoever is ahead in the lane (player or traffic)
       let gap = 1e9;
       const pn = Math.abs(near.d - LANES[t.lane]) < 2.4 ? G.s - t.s : 1e9; if (pn > 0 && pn < gap) gap = pn;
@@ -479,6 +504,7 @@ function frame() {
 
 // ------------------------------------------------------------------ boot
 W.setWorld(settings.world);
+applyControlsMode();
 preload().then(() => { setPlayerCar(); refreshMenu(); toMenu(); }).catch((e) => { loadTxt.textContent = 'Something went wrong: ' + e; console.error(e); });
 camera.position.set(6, 3, 7);
 frame();

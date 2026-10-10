@@ -23,9 +23,25 @@
     <button class="ctl steer" id="btnLeft" aria-label="Left">◀</button>
     <button class="ctl steer" id="btnRight" aria-label="Right">▶</button>
   </div>
+  <div id="wheel" aria-label="Steering wheel">
+    <div id="wheelimg">
+      <svg viewBox="0 0 200 200" width="100%" height="100%">
+        <defs><radialGradient id="rim" cx="50%" cy="45%" r="55%"><stop offset="0" stop-color="#3a3f47"/><stop offset="1" stop-color="#15181d"/></radialGradient>
+        <radialGradient id="hub" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#5b6572"/><stop offset="1" stop-color="#1c2129"/></radialGradient></defs>
+        <circle cx="100" cy="100" r="92" fill="url(#rim)" stroke="#0c0e12" stroke-width="4"/>
+        <circle cx="100" cy="100" r="66" fill="none" stroke="#0c0e12" stroke-width="3"/>
+        <circle cx="100" cy="100" r="66" fill="rgba(0,0,0,0.0)"/>
+        <path d="M100 100 L34 100 M100 100 L166 100 M100 100 L100 166" stroke="#23282f" stroke-width="22" stroke-linecap="round"/>
+        <path d="M100 100 L34 100 M100 100 L166 100 M100 100 L100 166" stroke="#3a4149" stroke-width="12" stroke-linecap="round"/>
+        <circle cx="100" cy="100" r="30" fill="url(#hub)" stroke="#0c0e12" stroke-width="3"/>
+        <circle cx="100" cy="100" r="13" fill="#D0B46C"/>
+        <rect x="94" y="12" width="12" height="18" rx="4" fill="#D0B46C"/>
+      </svg>
+    </div>
+  </div>
   <div id="rightpad">
-    <button class="ctl brake" id="btnBrake" aria-label="Brake">STOP</button>
-    <button class="ctl gas" id="btnGas" aria-label="Gas">GO</button>
+    <button class="ctl brake" id="btnBrake" aria-label="Brake"><span class="pedal-label">STOP</span></button>
+    <button class="ctl gas" id="btnGas" aria-label="Gas"><span class="pedal-label">GO</span></button>
   </div>
   <div id="extras">
     <button class="ctl small" id="btnHorn" aria-label="Horn">📣</button>
@@ -65,6 +81,7 @@
       <button class="opt" id="optTraffic">🚗🚙</button>
       <button class="opt" id="optSound">🔊</button>
       <button class="opt" id="optTilt">📱</button>
+      <button class="opt" id="optCtl">🎡</button>
     </div>
   </div>
 
