@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simple car silhouette in Glyde-X gold on navy -->
+<vector xmlns:android="http://schemas.android.com/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#D0B46C"
+        android:pathData="M22,62 L28,46 C29,43 32,41 35,41 L68,41 C71,41 74,43 76,46 L84,58 L88,58 C90,58 92,60 92,62 L92,70 C92,72 90,74 88,74 L20,74 C18,74 16,72 16,70 L16,66 C16,64 18,62 20,62 Z" />
+    <path android:fillColor="#17283C"
+        android:pathData="M36,46 L50,46 L50,58 L30,58 Z M54,46 L66,46 L72,58 L54,58 Z" />
+    <path android:fillColor="#0E1A28"
+        android:pathData="M32,78 m-8,0 a8,8 0 1,1 16,0 a8,8 0 1,1 -16,0 Z M76,78 m-8,0 a8,8 0 1,1 16,0 a8,8 0 1,1 -16,0 Z" />
+    <path android:fillColor="#D0B46C"
+        android:pathData="M32,78 m-3,0 a3,3 0 1,1 6,0 a3,3 0 1,1 -6,0 Z M76,78 m-3,0 a3,3 0 1,1 6,0 a3,3 0 1,1 -6,0 Z" />
+</vector>

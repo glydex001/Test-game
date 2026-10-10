@@ -1,0 +1,51 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'za.co.glydex.kidcars'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "za.co.glydex.kidcars"
+        minSdk 26
+        targetSdk 34
+        versionCode Integer.parseInt(System.getenv("KIDCARS_VERSION_CODE") ?: "1")
+        versionName "1." + (System.getenv("KIDCARS_VERSION_CODE") ?: "0")
+    }
+
+    signingConfigs {
+        release {
+            storeFile rootProject.file("signing/kidcars.jks")
+            storePassword "kidcars123"
+            keyAlias "kidcars"
+            keyPassword "kidcars123"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            signingConfig signingConfigs.release
+        }
+    }
+
+    // the game is already built into app/src/main/assets/www; don't let aapt compress the big files
+    androidResources {
+        noCompress 'glb', 'wasm', 'webp'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.webkit:webkit:1.11.0'
+}

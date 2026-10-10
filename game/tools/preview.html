@@ -1,0 +1,34 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#8fb3d9}canvas{display:block}</style></head><body>
+<canvas id="c"></canvas>
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from '/node_modules/three/build/three.module.js';
+import { GLTFLoader } from '/node_modules/three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from '/node_modules/three/examples/jsm/loaders/DRACOLoader.js';
+import { RoomEnvironment } from '/node_modules/three/examples/jsm/environments/RoomEnvironment.js';
+const q = new URLSearchParams(location.search);
+const file = q.get('file'); const view = q.get('view') || 'fl'; const tint = q.get('tint') === '1';
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+renderer.setSize(640, 400); renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.shadowMap.enabled = true;
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x8fb3d9);
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+const sun = new THREE.DirectionalLight(0xffffff, 2); sun.position.set(3, 6, 2); sun.castShadow = true; scene.add(sun);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.5));
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.MeshStandardMaterial({ color: 0x777777 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+// axis markers: red cube at -Z (front), blue at +Z
+const mk = (z, c) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), new THREE.MeshBasicMaterial({ color: c })); m.position.set(0, 0.15, z); scene.add(m); };
+mk(-3.5, 0xff0000); mk(3.5, 0x0000ff);
+const camera = new THREE.PerspectiveCamera(40, 640 / 400, 0.1, 100);
+const dl = new DRACOLoader(); dl.setDecoderPath('/node_modules/three/examples/jsm/libs/draco/gltf/');
+const loader = new GLTFLoader(); loader.setDRACOLoader(dl);
+loader.load(file, (g) => {
+  const root = g.scene; scene.add(root);
+  const red = new THREE.MeshStandardMaterial({ color: 0xff2200 });
+  root.traverse((o) => { if (o.isMesh) { o.castShadow = true; } });
+  if (tint) root.traverse((o) => { if (/^wheel_/.test(o.name)) o.traverse((m) => { if (m.isMesh) m.material = red; }); });
+  const views = { fl: [4.5, 2.2, -5], side: [7, 1.5, 0], rear: [3.5, 2, 5.5], top: [0.01, 8, 0.01] };
+  camera.position.set(...views[view]); camera.lookAt(0, 0.6, 0);
+  renderer.render(scene, camera);
+  window.__done = true;
+}, undefined, (e) => { console.error('LOADFAIL', e); window.__done = true; });
+</script></body></html>

@@ -1,0 +1,91 @@
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: none; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: "Arial Rounded MT Bold", "Nunito", "Segoe UI", Arial, sans-serif; }
+canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+.hidden { display: none !important; }
+button { border: 0; outline: 0; font-family: inherit; cursor: pointer; }
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; inset: 0; pointer-events: none; }
+#hud button { pointer-events: auto; }
+
+#speedo { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); text-align: center; color: #fff;
+  text-shadow: 0 2px 6px rgba(0,0,0,.6); }
+#speedval { font-size: 54px; font-weight: 900; line-height: 1; letter-spacing: -1px; }
+#speedo .unit { font-size: 14px; opacity: .85; margin-top: 2px; }
+#dist { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 20px; font-weight: 800;
+  background: rgba(0,0,0,.35); padding: 6px 16px; border-radius: 20px; }
+
+.iconbtn { position: absolute; top: 10px; right: 10px; width: 52px; height: 52px; border-radius: 50%; background: rgba(0,0,0,.4);
+  color: #fff; font-size: 20px; font-weight: 900; }
+
+.ctl { position: absolute; border-radius: 50%; color: #fff; font-weight: 900; font-size: 44px; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 6px 0 rgba(0,0,0,.35), inset 0 -6px 0 rgba(0,0,0,.18); transition: transform .05s; }
+.ctl.pressed { transform: translateY(4px); box-shadow: 0 2px 0 rgba(0,0,0,.35), inset 0 -2px 0 rgba(0,0,0,.18); filter: brightness(1.15); }
+.steer { width: 110px; height: 110px; background: #3b82f6; }
+#leftpad, #rightpad, #extras { position: absolute; bottom: 18px; }
+#leftpad { left: 18px; width: 250px; height: 120px; }
+#btnLeft { left: 0; bottom: 0; }
+#btnRight { left: 130px; bottom: 0; }
+#rightpad { right: 18px; width: 260px; height: 130px; }
+#btnGas { right: 0; bottom: 0; width: 120px; height: 120px; background: #22c55e; font-size: 34px; }
+#btnBrake { right: 140px; bottom: 0; width: 100px; height: 100px; background: #ef4444; font-size: 26px; }
+#extras { right: 18px; bottom: 160px; width: 260px; height: 70px; }
+.small { width: 64px; height: 64px; font-size: 30px; background: #f59e0b; }
+#btnHorn { right: 80px; bottom: 0; }
+#btnBoost { right: 0; bottom: 0; background: #8b5cf6; }
+#btnBoost.cooling { opacity: .45; }
+#boostbar { position: absolute; right: 18px; bottom: 236px; width: 150px; height: 8px; border-radius: 4px; background: rgba(0,0,0,.4); overflow: hidden; }
+#boostfill { height: 100%; width: 100%; background: #a78bfa; transition: width .1s linear; }
+
+/* ---------- MENU ---------- */
+#menu { position: fixed; inset: 0; pointer-events: none; }
+#menu > * { pointer-events: auto; }
+#title { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 40px; font-weight: 900; color: #fff;
+  letter-spacing: 3px; text-shadow: 0 3px 0 #1e3a8a, 0 6px 16px rgba(0,0,0,.5); }
+#carname { position: absolute; top: 62px; left: 50%; transform: translateX(-50%); font-size: 20px; font-weight: 800; color: #fff;
+  background: rgba(0,0,0,.4); padding: 4px 18px; border-radius: 20px; white-space: nowrap; }
+.arrow { position: absolute; top: 50%; transform: translateY(-50%); width: 72px; height: 110px; font-size: 64px; font-weight: 900; color: #fff;
+  background: rgba(0,0,0,.35); border-radius: 18px; }
+#prevCar { left: 12px; } #nextCar { right: 12px; }
+
+#options { position: absolute; left: 100px; top: 100px; display: flex; flex-direction: column; gap: 8px; }
+.optrow { display: flex; gap: 8px; }
+.opt { width: 58px; height: 58px; border-radius: 14px; background: rgba(255,255,255,.75); font-size: 28px; opacity: .55; transform: scale(.92);
+  transition: all .12s; display: flex; align-items: center; justify-content: center; }
+.opt.on { opacity: 1; transform: scale(1); background: #fff; box-shadow: 0 0 0 4px #22c55e; }
+#miscRow .opt { font-size: 22px; }
+#miscRow .opt.off { opacity: .4; }
+
+#colors { position: absolute; right: 100px; top: 100px; display: grid; grid-template-columns: repeat(3, 44px); gap: 8px; }
+.swatch { width: 44px; height: 44px; border-radius: 50%; border: 4px solid rgba(255,255,255,.6); }
+.swatch.on { border-color: #fff; box-shadow: 0 0 0 4px #22c55e; }
+
+#btnPlay { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); padding: 16px 60px; font-size: 34px; font-weight: 900;
+  color: #fff; background: #22c55e; border-radius: 40px; letter-spacing: 2px; box-shadow: 0 8px 0 #15803d; }
+#btnPlay:active { transform: translate(-50%, 6px); box-shadow: 0 2px 0 #15803d; }
+
+#rotate { position: fixed; inset: 0; background: #0f172a; color: #fff; display: none; align-items: center; justify-content: center;
+  font-size: 28px; font-weight: 800; text-align: center; z-index: 50; }
+@media (orientation: portrait) { #rotate { display: flex; } }
+
+@media (max-height: 420px) {
+  .steer { width: 90px; height: 90px; font-size: 36px; } #btnRight { left: 105px; } #leftpad { width: 200px; }
+  #btnGas { width: 100px; height: 100px; } #btnBrake { width: 86px; height: 86px; right: 118px; }
+  #extras { bottom: 135px; } #boostbar { bottom: 206px; }
+  #speedval { font-size: 42px; }
+}
+
+/* ---------- loading & brand ---------- */
+#loading { position: fixed; inset: 0; z-index: 40; background: #f8f6f0; display: flex; align-items: center; justify-content: center; }
+.loadcard { text-align: center; width: min(420px, 80vw); }
+.loadcard img { width: 70%; max-width: 300px; display: block; margin: 0 auto 10px; }
+.loadtitle { font-size: 34px; font-weight: 900; color: #17283C; letter-spacing: 4px; margin-bottom: 14px; }
+#loadbar { height: 10px; border-radius: 5px; background: rgba(23,40,60,.12); overflow: hidden; }
+#loadfill { height: 100%; width: 0%; background: linear-gradient(90deg, #D0B46C, #846839); transition: width .2s; }
+#loadtxt { margin-top: 10px; color: rgba(23,40,60,.6); font-size: 14px; font-weight: 700; }
+#brandline { position: absolute; top: 92px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,.9); padding: 4px 12px; border-radius: 14px; }
+#brandline img { height: 22px; }
+#brandline span { font-size: 11px; font-weight: 800; color: #846839; letter-spacing: 1px; text-transform: uppercase; }
+.iconbtn.cam { right: 70px; font-size: 22px; }
+#title { text-shadow: 0 3px 0 #17283C, 0 6px 16px rgba(0,0,0,.5); }
