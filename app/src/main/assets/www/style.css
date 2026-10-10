@@ -1,12 +1,12 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: none; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: "Arial Rounded MT Bold", "Nunito", "Segoe UI", Arial, sans-serif; }
+html, body { margin: 0; height: 100%; overflow: hidden; touch-action: none; overscroll-behavior: none; background: #000; font-family: "Arial Rounded MT Bold", "Nunito", "Segoe UI", Arial, sans-serif; }
 canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 .hidden { display: none !important; }
 button { border: 0; outline: 0; font-family: inherit; cursor: pointer; }
 
 /* ---------- HUD ---------- */
 #hud { position: fixed; inset: 0; pointer-events: none; }
-#hud button { pointer-events: auto; }
+#hud button, #hud #wheel { pointer-events: auto; }
 
 #speedo { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); text-align: center; color: #fff;
   text-shadow: 0 2px 6px rgba(0,0,0,.6); }

@@ -26,9 +26,10 @@ function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(settings))
 
 // ------------------------------------------------------------------ renderer / scene
 const canvas = $('c');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
-renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const TEST = /[?&]test/.test(location.search);   // automated test mode: lowest graphics so the simulation runs fast
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !TEST, powerPreference: 'high-performance' });
+renderer.setPixelRatio(TEST ? 0.35 : Math.min(window.devicePixelRatio || 1, 1.5));
+renderer.shadowMap.enabled = !TEST; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.5;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 0.3, 1400);
@@ -44,7 +45,7 @@ const GradeShader = {
     void main(){ vec4 c = texture2D(tDiffuse, vUv); float l = dot(c.rgb, vec3(0.299,0.587,0.114)); c.rgb = mix(vec3(l), c.rgb, uSat);
       vec2 d = vUv - 0.5; float v = 1.0 - uVig * smoothstep(0.25, 0.75, dot(d, d) * 2.0); c.rgb *= v; gl_FragColor = c; }`,
 };
-let composer = null, bloomPass = null, usePost = true;
+let composer = null, bloomPass = null, usePost = !TEST;
 function buildComposer() {
   const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
   composer = new EffectComposer(renderer, rt);
@@ -145,21 +146,79 @@ function applyTime() {
   if (player) { player.userData.paint.forEach((m) => (m.envMapIntensity = W.night ? 0.6 : 1.25)); headlights.children.forEach((c) => { if (c.isSpotLight) c.intensity = W.night ? 400 : 0; }); }
 }
 
-// ------------------------------------------------------------------ input (with a global release so no button can stick)
+// ------------------------------------------------------------------ input
+// Touch handling reads the raw touch list on every event and works out which finger is on which control.
+// (Pointer events alone are unreliable with two thumbs down: the browser can treat the pair as a pinch and
+// quietly drop the release of one finger, which leaves a button or the wheel stuck.)
 const input = { left: false, right: false, gas: false, brake: false, boost: false, tilt: 0, wheel: 0 };
-// steering wheel: drag to turn (relative), springs back when released
+const ctlIds = ['btnLeft', 'btnRight', 'btnGas', 'btnBrake', 'btnBoost'];
+const ctlKey = { btnLeft: 'left', btnRight: 'right', btnGas: 'gas', btnBrake: 'brake', btnBoost: 'boost' };
 const wheelEl = $('wheel'), wheelImg = $('wheelimg');
 let wheelAngle = 0, wheelDrag = null; const WHEEL_MAX = 140;
-function wheelAngleOf(e) { const r = wheelEl.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180 / Math.PI; }
-wheelEl.addEventListener('pointerdown', (e) => { e.preventDefault(); wheelEl.setPointerCapture(e.pointerId); wheelDrag = { id: e.pointerId, a0: wheelAngleOf(e), w0: wheelAngle }; Sound.init(); Sound.resume(); });
-wheelEl.addEventListener('pointermove', (e) => {
-  if (!wheelDrag || e.pointerId !== wheelDrag.id) return;
-  let da = wheelAngleOf(e) - wheelDrag.a0; while (da > 180) da -= 360; while (da < -180) da += 360;
-  wheelAngle = clamp(wheelDrag.w0 + da, -WHEEL_MAX, WHEEL_MAX); wheelImg.style.transform = `rotate(${wheelAngle}deg)`;
-});
-const wheelUp = (e) => { if (wheelDrag && e.pointerId === wheelDrag.id) wheelDrag = null; };
-wheelEl.addEventListener('pointerup', wheelUp); wheelEl.addEventListener('pointercancel', wheelUp);
-wheelEl.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+const touches = new Map();     // identifier -> { x, y, wheel: bool }
+const mouseHeld = new Map();   // pointerId -> key (desktop mouse only)
+function angleAt(x, y) { const r = wheelEl.getBoundingClientRect(); return Math.atan2(y - (r.top + r.height / 2), x - (r.left + r.width / 2)) * 180 / Math.PI; }
+function inside(el, x, y) { const r = el.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; }
+function recomputeTouchInput() {
+  const held = {};
+  for (const id of ctlIds) held[ctlKey[id]] = false;
+  for (const t of touches.values()) {
+    if (t.wheel) continue;
+    for (const id of ctlIds) if (inside($(id), t.x, t.y)) held[ctlKey[id]] = true;
+  }
+  for (const id of ctlIds) { const k = ctlKey[id]; const on = held[k] || mouseHeld.has(k); input[k] = on; $(id).classList.toggle('pressed', on); }
+}
+function onTouch(e) {
+  if (e.cancelable) e.preventDefault();
+  if (e.type === 'touchstart') { Sound.init(); Sound.resume(); }
+  // reconcile with the browser's list of active touches: a finger that vanished without a touchend is released
+  const live = new Set(Array.from(e.touches).map((t) => t.identifier));
+  for (const id of Array.from(touches.keys())) if (!live.has(id) && !Array.from(e.changedTouches).some((t) => t.identifier === id)) { const rec = touches.get(id); touches.delete(id); if (rec && rec.wheel && wheelDrag && wheelDrag.id === id) wheelDrag = null; }
+  for (const t of Array.from(e.changedTouches)) {
+    const id = t.identifier;
+    if (e.type === 'touchstart') {
+      const onWheel = settings.controls === 'wheel' && state === 'drive' && inside(wheelEl, t.clientX, t.clientY) && !wheelDrag;
+      touches.set(id, { x: t.clientX, y: t.clientY, wheel: onWheel });
+      if (onWheel) wheelDrag = { id, a0: angleAt(t.clientX, t.clientY), w0: wheelAngle };
+      if (state === 'drive' && inside($('btnHorn'), t.clientX, t.clientY)) { Sound.horn(); $('btnHorn').classList.add('pressed'); setTimeout(() => $('btnHorn').classList.remove('pressed'), 200); }
+    } else if (e.type === 'touchmove') {
+      const rec = touches.get(id); if (!rec) continue; rec.x = t.clientX; rec.y = t.clientY;
+      if (rec.wheel && wheelDrag && wheelDrag.id === id) {
+        let da = angleAt(t.clientX, t.clientY) - wheelDrag.a0; while (da > 180) da -= 360; while (da < -180) da += 360;
+        wheelAngle = clamp(wheelDrag.w0 + da, -WHEEL_MAX, WHEEL_MAX); wheelImg.style.transform = `rotate(${wheelAngle}deg)`;
+      }
+    } else { // touchend / touchcancel
+      const rec = touches.get(id); touches.delete(id);
+      if (rec && rec.wheel && wheelDrag && wheelDrag.id === id) wheelDrag = null;
+    }
+  }
+  recomputeTouchInput();
+}
+for (const ev of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) document.addEventListener(ev, onTouch, { passive: false });
+// desktop mouse support (pointer events, ignored for touch which is handled above)
+function bindMouse(id, key) {
+  const el = $(id);
+  el.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; e.preventDefault(); mouseHeld.set(key, true); recomputeTouchInput(); Sound.init(); Sound.resume(); });
+  const up = (e) => { if (e && e.pointerType === 'touch') return; mouseHeld.delete(key); recomputeTouchInput(); };
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); el.addEventListener('pointerleave', up);
+}
+ctlIds.forEach((id) => bindMouse(id, ctlKey[id]));
+window.addEventListener('blur', () => { touches.clear(); mouseHeld.clear(); wheelDrag = null; recomputeTouchInput(); });
+wheelEl.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; e.preventDefault(); wheelEl.setPointerCapture(e.pointerId); wheelDrag = { id: 'mouse', a0: angleAt(e.clientX, e.clientY), w0: wheelAngle }; });
+wheelEl.addEventListener('pointermove', (e) => { if (e.pointerType === 'touch' || !wheelDrag || wheelDrag.id !== 'mouse') return; let da = angleAt(e.clientX, e.clientY) - wheelDrag.a0; while (da > 180) da -= 360; while (da < -180) da += 360; wheelAngle = clamp(wheelDrag.w0 + da, -WHEEL_MAX, WHEEL_MAX); wheelImg.style.transform = `rotate(${wheelAngle}deg)`; });
+const mouseWheelUp = (e) => { if (e.pointerType === 'touch') return; if (wheelDrag && wheelDrag.id === 'mouse') wheelDrag = null; };
+wheelEl.addEventListener('pointerup', mouseWheelUp); wheelEl.addEventListener('pointercancel', mouseWheelUp);
+$('btnHorn').addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; e.preventDefault(); Sound.init(); Sound.resume(); Sound.horn(); });
+$('btnCam').addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; settings.cam = (settings.cam + 1) % 3; save(); });
+$('btnFix').addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; repairCar(); });
+// taps on the simple buttons (camera / fix / pause) via touch
+document.addEventListener('touchend', (e) => {
+  if (state !== 'drive') return;
+  for (const t of Array.from(e.changedTouches)) {
+    if (inside($('btnCam'), t.clientX, t.clientY)) { settings.cam = (settings.cam + 1) % 3; save(); }
+    if (!$('totaled').classList.contains('hidden') && inside($('btnFix'), t.clientX, t.clientY)) repairCar();
+  }
+}, { passive: false });
 function updateWheel(dt) {
   if (!wheelDrag) { wheelAngle += (0 - wheelAngle) * Math.min(1, 9 * dt); if (Math.abs(wheelAngle) < 0.3) wheelAngle = 0; wheelImg.style.transform = `rotate(${wheelAngle}deg)`; }
   input.wheel = wheelAngle / WHEEL_MAX;
@@ -170,21 +229,6 @@ function applyControlsMode() {
   $('rightpad').classList.toggle('pedals', wheel);
   $('optCtl').textContent = wheel ? '🎡' : '🕹️';
 }
-const held = new Map();   // pointerId -> key
-function bindHold(id, key) {
-  const el = $(id);
-  el.addEventListener('pointerdown', (e) => { e.preventDefault(); input[key] = true; held.set(e.pointerId, key); el.classList.add('pressed'); Sound.init(); Sound.resume(); });
-  const up = (e) => { if (e) e.preventDefault(); input[key] = false; held.delete(e && e.pointerId); el.classList.remove('pressed'); };
-  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); el.addEventListener('pointerleave', up);
-  el.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
-}
-['pointerup', 'pointercancel'].forEach((ev) => window.addEventListener(ev, (e) => { const k = held.get(e.pointerId); if (k) { input[k] = false; held.delete(e.pointerId); document.querySelectorAll('.ctl.pressed').forEach((b) => b.classList.remove('pressed')); } }));
-window.addEventListener('blur', () => { for (const k in input) if (k !== 'tilt') input[k] = false; held.clear(); });
-bindHold('btnLeft', 'left'); bindHold('btnRight', 'right'); bindHold('btnGas', 'gas'); bindHold('btnBrake', 'brake'); bindHold('btnBoost', 'boost');
-$('btnHorn').addEventListener('pointerdown', (e) => { e.preventDefault(); Sound.init(); Sound.resume(); Sound.horn(); $('btnHorn').classList.add('pressed'); });
-$('btnHorn').addEventListener('pointerup', () => $('btnHorn').classList.remove('pressed'));
-$('btnCam').addEventListener('pointerdown', (e) => { e.preventDefault(); settings.cam = (settings.cam + 1) % 3; save(); });
-$('btnFix').addEventListener('pointerdown', (e) => { e.preventDefault(); repairCar(); });
 window.addEventListener('keydown', (e) => {
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = true;
   if (e.code === 'ArrowRight' || e.code === 'KeyD') input.right = true;
@@ -264,7 +308,7 @@ function spawnMapTraffic(t) {
 }
 function toMenu() {
   state = 'menu'; hud.classList.add('hidden'); menu.classList.remove('hidden'); $('totaled').classList.add('hidden');
-  for (const k in input) if (k !== 'tilt') input[k] = false;
+  for (const k in input) if (k !== 'tilt') input[k] = false; touches.clear(); mouseHeld.clear(); wheelDrag = null; recomputeTouchInput();
   traffic.forEach((t) => { t.active = false; if (t.mesh) t.mesh.visible = false; });
   player.position.set(0, 0, 0); player.rotation.set(0, 0, 0); G.menuAngle = 0.7; G.damage = 0; G.totaled = false; applyDamageLook();
   if (Sound.engine) Sound.update(0, 1, false, false);
@@ -333,7 +377,7 @@ function update(dt) {
     G.boostFuel = G.boosting ? Math.max(0, G.boostFuel - dt / 3) : Math.min(1, G.boostFuel + dt / 9);
     boostFill.style.width = (G.boostFuel * 100).toFixed(0) + '%'; boostBtn.classList.toggle('cooling', G.boostFuel < 0.05);
     let steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    if (settings.controls === 'wheel') { updateWheel(dt); if (steer === 0) steer = Math.sign(input.wheel) * Math.pow(Math.abs(input.wheel), 1.3); }
+    if (settings.controls === 'wheel') { updateWheel(dt); if (steer === 0) steer = Math.sign(input.wheel) * Math.pow(Math.abs(input.wheel), 1.5); }
     if (settings.tilt && steer === 0) steer = input.tilt;
     if (G.totaled) { body.throttle = 0; body.brake = 0.4; body.steer = 0; body.yawRate = G.spin; G.spin *= Math.pow(0.4, dt); }
     else { body.throttle = input.gas ? 1 : 0; body.brake = input.brake ? 1 : 0; body.steer = steer; }
@@ -496,8 +540,9 @@ function autoQuality(dt) {
     resize();
   }
 }
+let physTime = 0;
 function frame() {
-  const dt = Math.min(0.05, clock.getDelta());
+  const dt = Math.min(0.05, clock.getDelta()); physTime += dt;
   if (player && (W.road || state === 'menu')) { update(dt); autoQuality(dt); if (usePost && composer) composer.render(); else renderer.render(scene, camera); }
   requestAnimationFrame(frame);
 }
@@ -509,4 +554,4 @@ preload().then(() => { setPlayerCar(); refreshMenu(); toMenu(); }).catch((e) => 
 camera.position.set(6, 3, 7);
 frame();
 document.addEventListener('visibilitychange', () => { if (document.hidden) { input.gas = input.brake = input.boost = false; } else Sound.resume(); });
-window.__kidcars = { G, settings, state: () => state, hasCar, body: () => body };
+window.__kidcars = { G, settings, state: () => state, hasCar, body: () => body, simTime: () => physTime, roadReady: () => !!W.road, inputs: () => ({ ...input }) };

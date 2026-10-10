@@ -19,6 +19,12 @@ Download the newest `KidCars-v1.N.apk` from the Releases page onto the phone and
 - Lenasia mode is a free-roam map of the real suburb built from OpenStreetMap data (`app/src/main/assets/www/lenasia.json`,
   made by `game/tools/osm2map.mjs` from an OSM export). You start next to Trade Route Mall; the mini-map shows streets and landmarks.
 
+## Testing
+
+`cd game && npm install && npm test` runs a touch-input test loop: it opens the game in headless Chrome, presses the real
+on-screen controls with emulated fingers (wheel, pedals, buttons, two fingers at once) and checks the car reacts correctly.
+`npm run shots` takes screenshots of a few setups.
+
 ## Project layout
 
 - `app/` — the Android wrapper (a full-screen WebView that runs the game from `app/src/main/assets/www`).
