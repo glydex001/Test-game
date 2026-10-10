@@ -25,7 +25,7 @@ export const Sound = {
     this.wind = { ng, nlp, buf };
     this.setOn(this.on);
   },
-  setOn(v) { this.on = v; if (this.master) this.master.gain.setTargetAtTime(v ? 0.8 : 0, this.ctx.currentTime, 0.05); },
+  setOn(v) { this.on = v; if (this.master) this.master.gain.value = v ? 0.8 : 0; },
   resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); },
   update(speed, maxSpeed, gas, boosting) {
     if (!this.engine) return;
@@ -35,12 +35,13 @@ export const Sound = {
     const frac = clamp((speed - gear * span) / span, 0, 1);
     const rpm = 0.15 + frac * 0.85;
     const f = 45 + rpm * 110 + gear * 10 + (boosting ? 30 : 0);
-    this.engine.o1.frequency.setTargetAtTime(f, t, 0.05);
-    this.engine.o2.frequency.setTargetAtTime(f / 2, t, 0.05);
-    this.engine.lp.frequency.setTargetAtTime(300 + rpm * 1400 + (gas ? 300 : 0), t, 0.08);
-    this.engine.eg.gain.setTargetAtTime(gas ? 0.16 : 0.08 + rpm * 0.02, t, 0.1);
+    const sm = (param, target, k) => { param.value += (target - param.value) * k; };
+    sm(this.engine.o1.frequency, f, 0.25);
+    sm(this.engine.o2.frequency, f / 2, 0.25);
+    sm(this.engine.lp.frequency, 300 + rpm * 1400 + (gas ? 300 : 0), 0.15);
+    sm(this.engine.eg.gain, gas ? 0.16 : 0.08 + rpm * 0.02, 0.12);
     const w = Math.pow(clamp(speed / 60, 0, 1), 2);
-    this.wind.ng.gain.setTargetAtTime(w * 0.12, t, 0.2);
+    sm(this.wind.ng.gain, w * 0.12, 0.08);
   },
   horn() {
     if (!this.ctx || !this.on) return;

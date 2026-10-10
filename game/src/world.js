@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { ProceduralRoad, ROAD_W } from './road.js';
+import { OsmWorld } from './osmworld.js';
 import { Lensflare, LensflareElement } from 'three/addons/objects/Lensflare.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -153,7 +154,17 @@ export function createWorld(scene, renderer) {
     city: { ground: 'pavement', tile: 4, shoulder: 'pavement', shoulderTint: 0xffffff, backdrop: 'skyline_city', backdropH: 90, buildings: true, makeBuilding,
       scatter: [], fog: { day: 0xcfdbe8, sunset: 0xe8a878, night: 0x0b0e1a }, fogFar: 400, offroadGrip: 0.9, fMats },
   };
+  // Lenasia (map mode) materials
+  const houseTex = tex('house_front', { mirror: true }); const wallTex = tex('precast_wall', { mirror: true }); const roofTex = tex('roof_tiles', { mirror: true });
+  const fMatsHouse = std({ map: houseTex, roughness: 0.9, metalness: 0 });
+  const wallMat = std({ map: wallTex, roughness: 1, metalness: 0 });
+  const roofTileMat = std({ map: roofTex, roughness: 0.9, metalness: 0 }); roofTex.repeat.set(2, 2);
+  W.worlds.lenasia = { ground: 'grass', tile: 7, groundTint: 0xb7ad78, shoulder: 'sand', shoulderTint: 0xffffff, backdrop: 'hills_green', backdropH: 38, map: 'lenasia.json',
+    fog: { day: 0xd6dde6, sunset: 0xe9b48a, night: 0x0a0f1e }, fogFar: 520, offroadGrip: 0.55,
+    scatter: [], tex, fMats, fMatsHouse, wallMat, roofTileMat, makeBuilding, treeStyles: null, start: [-743, -2581], showroomAt: null };
   for (const k in W.worlds) W.worlds[k].mats = M;
+  W.worlds.lenasia.treeStyles = { oakTree, pineTree };
+  W.mapData = {};
 
   W.setWorld = (name) => {
     const w = W.worlds[name]; W.current = w; W.currentName = name;
@@ -161,8 +172,22 @@ export function createWorld(scene, renderer) {
     const s = tex(w.shoulder); M.shoulder.map = s; M.shoulder.color.setHex(w.shoulderTint); M.shoulder.needsUpdate = true;
     const bd = tex(w.backdrop, { mirror: true }); bd.repeat.set(4, 1); ringMat.map = bd; ringMat.needsUpdate = true;
     ring.scale.y = w.backdropH / 150; ring.position.y = w.backdropH / 2 - 2;
-    if (W.road) W.road.dispose();
-    W.road = new ProceduralRoad(scene, w);
+    groundMat.color.setHex(w.groundTint || 0xffffff);
+    if (W.road) W.road.dispose(); W.road = null;
+    if (w.map) {
+      W.loading = true;
+      const make = (data) => {
+        // start just off the mall on the nearest road; showroom 70 m along it on the left
+        const ow = new OsmWorld(scene, w, data);
+        const sp = ow.startPose(); const n = ow.nearest(sp.x, sp.z, { skipMinor: true }); const fx = -Math.sin(n.h), fz = -Math.cos(n.h), lx = fz, lz = -fx;
+        w.showroomAt = [n.px + fx * 70 + lx * (n.w / 2 + 12), n.pz + fz * 70 + lz * (n.w / 2 + 12), n.h + Math.PI / 2];
+        W.road = ow; W.loading = false;
+      };
+      if (W.mapData[w.map]) make(W.mapData[w.map]);
+      else fetch(w.map).then((r) => r.json()).then((d) => { W.mapData[w.map] = d; if (W.current === w) make(d); });
+    } else {
+      W.road = new ProceduralRoad(scene, w);
+    }
   };
 
   W.setTime = (time) => {

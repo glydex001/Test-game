@@ -1,6 +1,6 @@
 // Kid Cars — endless driving with real cars on a real winding road. No music, no people. Everything unlocked.
 import * as THREE from 'three';
-import { CARS, loadCar, hasCar, instantiate, setNightLights, setEnvIntensity } from './cars.js';
+import { CARS, loadCar, hasCar, instantiate, disposeInstance, setNightLights, setEnvIntensity } from './cars.js';
 import { createWorld } from './world.js';
 import { LANES, ROAD_W, RAIL_OFF, DS } from './road.js';
 import { CarBody, collideCars, collideCircle, collideBox } from './physics.js';
@@ -105,7 +105,7 @@ function updateSmoke(dt) {
 let player = null, playerSpec = CARS[0], body = null, headlights = null;
 const G = { s: 0, idx: 0, damage: 0, totaled: false, boostFuel: 1, boosting: false, shake: 0, dist: 0, menuAngle: 0.7, lastHitT: 0, spin: 0 };
 function setPlayerCar() {
-  if (player) scene.remove(player);
+  if (player) { scene.remove(player); disposeInstance(player); }
   playerSpec = CARS[settings.car];
   player = instantiate(playerSpec.id, !hasCar(playerSpec.id, false), COLORS[settings.color]);
   scene.add(player);
@@ -129,7 +129,7 @@ function spawnTraffic(t, ahead) {
     for (const o of traffic) if (o !== t && o.active && o.lane === lane && Math.abs(o.s - s) < 50) ok = false;
     if (ok) break; s += 40;
   }
-  if (t.mesh) scene.remove(t.mesh);
+  if (t.mesh) { scene.remove(t.mesh); disposeInstance(t.mesh); }
   t.spec = pick(CARS); t.mesh = instantiate(t.spec.id, true, pick(COLORS)); scene.add(t.mesh);
   t.body = new CarBody(t.spec); t.lane = lane; t.s = s; t.target = ahead ? rand(14, 27) : rand(30, 40);
   const p = W.road.pointAt(s); t.body.x = p.x + p.rx * LANES[lane]; t.body.z = p.z + p.rz * LANES[lane]; t.body.h = p.h;
@@ -217,17 +217,26 @@ $('optTilt').addEventListener('pointerdown', () => {
   settings.tilt = !settings.tilt; save(); refreshMenu();
   if (settings.tilt && typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) DeviceOrientationEvent.requestPermission().catch(() => {});
 });
-$('btnPlay').addEventListener('pointerdown', (e) => { e.preventDefault(); Sound.init(); Sound.resume(); Sound.setOn(settings.sound); startDrive(); });
+$('btnPlay').addEventListener('pointerdown', (e) => { e.preventDefault(); if (!W.road) return; Sound.init(); Sound.resume(); Sound.setOn(settings.sound); startDrive(); });
 $('btnPause').addEventListener('pointerdown', (e) => { e.preventDefault(); toMenu(); });
 
 // ------------------------------------------------------------------ game state
 function startDrive() {
   state = 'drive'; menu.classList.add('hidden'); hud.classList.remove('hidden');
+  $('mapbox').classList.toggle('hidden', !W.road.isMap); streetEl.textContent = '';
   G.s = 40; G.idx = 10; G.dist = 0; G.boostFuel = 1; G.damage = 0; G.totaled = false; G.spin = 0;
-  const p = W.road.pointAt(G.s);
+  const p = W.road.isMap ? W.road.startPose() : W.road.pointAt(G.s);
   body = new CarBody(playerSpec); body.x = p.x; body.z = p.z; body.h = p.h;
   applyDamageLook(); $('totaled').classList.add('hidden');
-  traffic.forEach((t) => { if (settings.traffic) spawnTraffic(t, true); else { t.active = false; if (t.mesh) t.mesh.visible = false; } });
+  traffic.forEach((t) => { if (settings.traffic) (W.road.isMap ? spawnMapTraffic(t) : spawnTraffic(t, true)); else { t.active = false; if (t.mesh) t.mesh.visible = false; } });
+}
+function spawnMapTraffic(t) {
+  if (t.mesh) { scene.remove(t.mesh); disposeInstance(t.mesh); }
+  t.spec = pick(CARS); t.mesh = instantiate(t.spec.id, true, pick(COLORS)); scene.add(t.mesh);
+  t.body = new CarBody(t.spec); t.body.mass = 60; t.agent = {};
+  if (!W.road.spawnAgent(t.agent, body.x, body.z)) { t.active = false; t.mesh.visible = false; return; }
+  W.road.advanceAgent(t.agent, 0); t.body.x = t.agent.x; t.body.z = t.agent.z; t.body.h = t.agent.h;
+  t.active = true; t.mesh.visible = true;
 }
 function toMenu() {
   state = 'menu'; hud.classList.add('hidden'); menu.classList.remove('hidden'); $('totaled').classList.add('hidden');
@@ -239,8 +248,10 @@ function toMenu() {
 function repairCar() {
   if (state !== 'drive') return;
   G.damage = 0; G.totaled = false; G.spin = 0; $('totaled').classList.add('hidden');
-  const near = W.road.nearest(body.x, body.z, G.idx); const p = W.road.pointAt(near.s + 2);
-  body.x = p.x + p.rx * LANES[1]; body.z = p.z + p.rz * LANES[1]; body.h = p.h; body.vx = body.vz = 0; body.yawRate = 0;
+  const near = W.road.nearest(body.x, body.z, G.idx);
+  if (W.road.isMap) { body.x = near.px; body.z = near.pz; body.h = near.h; }
+  else { const p = W.road.pointAt(near.s + 2); body.x = p.x + p.rx * LANES[1]; body.z = p.z + p.rz * LANES[1]; body.h = p.h; }
+  body.vx = body.vz = 0; body.yawRate = 0;
   applyDamageLook(); Sound.whoosh();
 }
 function applyDamageLook() {
@@ -264,7 +275,28 @@ function hit(closing) {
 // ------------------------------------------------------------------ main loop
 const clock = new THREE.Clock();
 const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
-const speedEl = $('speedval'), distEl = $('dist'), boostFill = $('boostfill'), boostBtn = $('btnBoost');
+const speedEl = $('speedval'), distEl = $('dist'), boostFill = $('boostfill'), boostBtn = $('btnBoost'), streetEl = $('street');
+// mini-map (map mode): roads within ~200 m, heading-up
+const mmCanvas = $('minimap'), mmCtx = mmCanvas.getContext('2d');
+let mmTick = 0;
+function drawMiniMap() {
+  if (++mmTick % 3) return;
+  const R = mmCanvas.width / 2, SC = R / 210; const ctx = mmCtx; const rd = W.road; const N = rd.nodes;
+  ctx.clearRect(0, 0, R * 2, R * 2);
+  ctx.save(); ctx.beginPath(); ctx.arc(R, R, R - 2, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = 'rgba(20,28,40,0.78)'; ctx.fillRect(0, 0, R * 2, R * 2);
+  ctx.translate(R, R); ctx.rotate(body.h); ctx.scale(SC, SC); ctx.translate(-body.x, -body.z);
+  const cx = Math.floor(body.x / rd.cell), cz = Math.floor(body.z / rd.cell); const seen = new Set();
+  ctx.lineCap = 'round';
+  for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) { const l = rd.hash.get(rd.key(cx + dx, cz + dz)); if (!l) continue; for (const code of l) { if (seen.has(code)) continue; seen.add(code); const ri = Math.floor(code / 4096), i = code % 4096; const r = rd.roads[ri]; const a = N[r.n[i]], b = N[r.n[i + 1]]; ctx.strokeStyle = r.w > 9 ? '#ffd58a' : r.t === 'service' || r.t === 'track' ? '#8a93a3' : '#e8edf5'; ctx.lineWidth = r.w * 0.9; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); } }
+  // landmarks
+  const tx = Math.floor(body.x / 400), tz = Math.floor(body.z / 400);
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const p of (rd.tilePois.get(rd.key(tx + dx, tz + dz)) || [])) { ctx.fillStyle = /school/i.test(p.k) ? '#60a5fa' : /worship|mosque/i.test(p.k) ? '#34d399' : /fuel/i.test(p.k) ? '#f97316' : '#f472b6'; ctx.beginPath(); ctx.arc(p.c[0], p.c[1], 7, 0, Math.PI * 2); ctx.fill(); }
+  if (W.current.showroomAt) { ctx.fillStyle = '#D0B46C'; ctx.beginPath(); ctx.arc(W.current.showroomAt[0], W.current.showroomAt[1], 9, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+  // player arrow
+  ctx.save(); ctx.translate(R, R); ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(6, 7); ctx.lineTo(-6, 7); ctx.closePath(); ctx.fill(); ctx.restore();
+}
 let smokeAcc = 0, dustAcc = 0;
 
 function update(dt) {
@@ -282,9 +314,12 @@ function update(dt) {
     else { body.throttle = input.gas ? 1 : 0; body.brake = input.brake ? 1 : 0; body.steer = steer; }
 
     // ---- road context
-    const near = W.road.nearest(body.x, body.z, G.idx); G.idx = near.i; G.s = near.s;
+    const isMap = !!W.road.isMap;
+    const near = W.road.nearest(body.x, body.z, G.idx);
+    if (!isMap) { G.idx = near.i; G.s = near.s; }
     const absd = Math.abs(near.d);
-    body.offRoad = absd > ROAD_W / 2 + 0.6; body.surfaceGrip = body.offRoad ? W.current.offroadGrip : 1;
+    body.offRoad = isMap ? !near.onRoad : absd > ROAD_W / 2 + 0.6; body.surfaceGrip = body.offRoad ? W.current.offroadGrip : 1;
+    if (isMap) streetEl.textContent = near.onRoad && near.name ? near.name : '';
     // a damaged car wanders and loses power
     const dmgF = G.damage / 100;
     if (dmgF > 0.5 && !G.totaled) { body.steer += Math.sin(clock.elapsedTime * 7) * (dmgF - 0.5) * 0.5; }
@@ -292,7 +327,7 @@ function update(dt) {
     G.dist += Math.max(0, body.vf) * dt;
 
     // ---- guardrail walls (country / desert / snow); the city uses buildings instead
-    if (W.current.guardrail || W.current.poles) {
+    if (!isMap && (W.current.guardrail || W.current.poles)) {
       const lim = (W.current.guardrail ? RAIL_OFF : ROAD_W / 2 + 0.75) - 0.15;
       const n2 = W.road.nearest(body.x, body.z, G.idx);
       if (Math.abs(n2.d) + body.halfW > lim) {
@@ -305,7 +340,7 @@ function update(dt) {
       }
     }
     // ---- static obstacles
-    for (const o of W.road.obstaclesNear(G.idx)) {
+    for (const o of (isMap ? W.road.obstaclesNear(body.x, body.z) : W.road.obstaclesNear(G.idx))) {
       if (Math.abs(o.x - body.x) > 40 || Math.abs(o.z - body.z) > 40) continue;
       const c = o.type === 'circle' ? collideCircle(body, o.x, o.z, o.r) : collideBox(body, o.x, o.z, o.hw, o.hl, o.h);
       if (c > 0) hit(c);
@@ -314,6 +349,23 @@ function update(dt) {
     // ---- traffic
     for (const t of traffic) {
       if (!t.active) continue;
+      if (isMap) {
+        const ag = t.agent; const b = t.body;
+        // slow down behind the player
+        const dxp = body.x - b.x, dzp = body.z - b.z; const [tfx, tfz] = b.fwd(); const aheadD = dxp * tfx + dzp * tfz; const sideD = Math.abs(dxp * tfz - dzp * tfx);
+        const blocked = aheadD > 0 && aheadD < 16 && sideD < 3;
+        const target = blocked ? Math.max(0, Math.abs(body.vf) - 1) : ag.speed;
+        const stepSpeed = ag.speed; ag.speed = target; W.road.advanceAgent(ag, dt); ag.speed = stepSpeed;
+        b.x += (ag.x - b.x) * Math.min(1, 10 * dt); b.z += (ag.z - b.z) * Math.min(1, 10 * dt);
+        let dh = ag.h - b.h; while (dh > Math.PI) dh -= Math.PI * 2; while (dh < -Math.PI) dh += Math.PI * 2; b.h += dh * Math.min(1, 10 * dt);
+        b.vx = tfx * target; b.vz = tfz * target; b.vf = target;
+        if (Math.hypot(dxp, dzp) > 420) { spawnMapTraffic(t); continue; }
+        placeTraffic(t);
+        for (const w of t.mesh.userData.wheels) { w.userData.spin.rotation.x -= (target * dt) / w.userData.radius; }
+        t.mesh.traverse((o) => { if (o.isMesh) o.castShadow = Math.hypot(dxp, dzp) < 70; });
+        const c = collideCars(body, b); if (c > 0) hit(c);
+        continue;
+      }
       const b = t.body; const tn = W.road.nearest(b.x, b.z, t.idx); t.idx = tn.i; t.s = tn.s;
       if (t.s < G.s - 120 || t.s > G.s + 520) { spawnTraffic(t, t.s < G.s); continue; }
       // steer toward a point ahead in its lane
@@ -336,7 +388,7 @@ function update(dt) {
       t.mesh.traverse((o) => { if (o.isMesh) o.castShadow = Math.abs(t.s - G.s) < 70; });
       const c = collideCars(body, b); if (c > 0) hit(c);
     }
-    for (let i = 0; i < traffic.length; i++) for (let j = i + 1; j < traffic.length; j++) if (traffic[i].active && traffic[j].active) collideCars(traffic[i].body, traffic[j].body);
+    if (!isMap) for (let i = 0; i < traffic.length; i++) for (let j = i + 1; j < traffic.length; j++) if (traffic[i].active && traffic[j].active) collideCars(traffic[i].body, traffic[j].body);
 
     // ---- player visuals
     player.position.set(body.x, 0, body.z); player.rotation.y = body.h;
@@ -356,7 +408,7 @@ function update(dt) {
     while (smokeAcc >= 1) { smokeAcc -= 1; emitSmoke(body.x + fx * (spec.len / 2 - 0.6), 0.9, body.z + fz * (spec.len / 2 - 0.6), G.totaled ? 1.4 : 0.8); }
 
     // ---- world upkeep
-    W.road.ensure(G.idx);
+    if (isMap) { W.road.ensure(body.x, body.z); drawMiniMap(); } else W.road.ensure(G.idx);
     W.follow(body.x, body.z, fx, fz);
     speedEl.textContent = Math.round(Math.abs(body.vf) * 3.6);
     distEl.textContent = (G.dist / 1000).toFixed(1) + ' km';
@@ -388,7 +440,9 @@ function update(dt) {
   } else {
     // garage turntable on the road
     G.menuAngle += dt * 0.3;
-    const p0 = W.road.pointAt(40);
+    if (!W.road) return;   // map still loading
+    const p0 = W.road.isMap ? W.road.startPose() : W.road.pointAt(40);
+    if (W.road.isMap) { p0.fx = -Math.sin(p0.h); p0.fz = -Math.cos(p0.h); }
     player.position.set(p0.x, 0, p0.z); player.rotation.y = p0.h + G.menuAngle;
     const r = 4.2 + playerSpec.len * 0.5;
     camera.position.set(p0.x + Math.sin(0.8) * r, 1.7 + playerSpec.len * 0.08, p0.z + Math.cos(0.8) * r);
@@ -396,7 +450,8 @@ function update(dt) {
     camera.fov = lerp(camera.fov, 42, Math.min(1, 4 * dt)); camera.updateProjectionMatrix();
     for (const w of player.userData.wheels) if (w.userData.front) w.rotation.y = lerp(w.rotation.y, 0, dt * 3);
     player.userData.glow.material.opacity = 0;
-    W.road.ensure(10); W.follow(p0.x, p0.z, p0.fx, p0.fz);
+    if (W.road.isMap) W.road.ensure(p0.x, p0.z); else W.road.ensure(10);
+    W.follow(p0.x, p0.z, p0.fx, p0.fz);
     if (Sound.engine) Sound.update(0, maxSpeed, false, false);
   }
   updateSmoke(dt);
@@ -418,7 +473,7 @@ function autoQuality(dt) {
 }
 function frame() {
   const dt = Math.min(0.05, clock.getDelta());
-  if (player) { update(dt); autoQuality(dt); if (usePost && composer) composer.render(); else renderer.render(scene, camera); }
+  if (player && (W.road || state === 'menu')) { update(dt); autoQuality(dt); if (usePost && composer) composer.render(); else renderer.render(scene, camera); }
   requestAnimationFrame(frame);
 }
 

@@ -98,10 +98,10 @@ export function instantiate(id, lo, colorHex) {
   }
   // soft contact shadow under the car (grounds it even where the shadow map can't reach)
   const blob = new THREE.Mesh(new THREE.PlaneGeometry(spec.w + 0.9, spec.len + 0.9), new THREE.MeshBasicMaterial({ map: getBlobTex(), transparent: true, depthWrite: false, opacity: 0.9 }));
-  blob.rotation.x = -Math.PI / 2; blob.position.y = 0.06; blob.renderOrder = 1; root.add(blob);
+  blob.rotation.x = -Math.PI / 2; blob.position.y = 0.06; blob.renderOrder = 1; blob.userData.own = true; root.add(blob);
   // boost glow
   const glow = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), new THREE.MeshBasicMaterial({ color: 0x5599ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-  glow.position.set(0, 0.38, spec.len / 2 + 0.35); glow.scale.set(1.6, 0.45, 2.2); root.add(glow);
+  glow.position.set(0, 0.38, spec.len / 2 + 0.35); glow.scale.set(1.6, 0.45, 2.2); glow.userData.own = true; root.add(glow);
   root.userData = { spec, wheels, glow, paint: [...paintMats.values()], proto };
   return root;
 }
@@ -116,4 +116,10 @@ export function setNightLights(night) {
 }
 export function setEnvIntensity(v) {
   for (const k in protos) protos[k].scene.traverse((o) => { if (o.isMesh) { const ms = Array.isArray(o.material) ? o.material : [o.material]; for (const m of ms) if (m) m.envMapIntensity = v; } });
+}
+
+export function disposeInstance(root) {
+  if (!root) return;
+  for (const m of root.userData.paint || []) m.dispose();
+  root.traverse((o) => { if (o.isMesh && o.userData.own) { o.geometry.dispose(); if (o.material && o.material.dispose) o.material.dispose(); } });
 }

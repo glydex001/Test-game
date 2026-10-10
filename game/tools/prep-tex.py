@@ -8,7 +8,7 @@ os.makedirs(OUT, exist_ok=True)
 
 TILES = {  # name: size
     'grass': 1024, 'sand': 1024, 'snow': 1024, 'pavement': 1024, 'asphalt': 1024,
-    'facade_glass': 1024, 'facade_brick': 1024, 'facade_shops': 1024,
+    'facade_glass': 1024, 'facade_brick': 1024, 'facade_shops': 1024, 'house_front': 1024, 'precast_wall': 512, 'roof_tiles': 512,
 }
 CUTOUTS = {  # name: (max width, crop box or None, soft, hard)
     'tree_oak': (768, None, 18, 60), 'tree_pine': (768, (60, 60, -20, -1), 18, 60), 'tree_snowpine': (768, None, 30, 90), 'cactus': (640, None, 30, 90),

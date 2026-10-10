@@ -15,6 +15,28 @@ function placeInstance(im, idx, x, y, z, heading, scale) {
   _m.compose(_p, _q, _s); im.setMatrixAt(idx, _m);
 }
 
+// Builds instanced trunks + leaf cards for a list of trees [{x,z,scale,rot}] using a tree style T.
+export function buildTrees(T, list) {
+  const trunks = new THREE.InstancedMesh(T.trunk.geometry, T.trunk.material, list.length);
+  const cards = new THREE.InstancedMesh(T.cards.geometry, T.cards.material, list.length * T.cards.n);
+  let kc = 0;
+  list.forEach((t, k) => {
+    const { x, z, scale } = t;
+    _p.set(x, 0, z); _e.set(0, t.rot || 0, 0); _q.setFromEuler(_e); _s.set(scale, T.trunk.h * scale, scale); _m.compose(_p, _q, _s); trunks.setMatrixAt(k, _m);
+    const C = T.cards;
+    for (let j = 0; j < C.n; j++) {
+      const u = rand(0, 6.28), v = rand(-1, 1); const rr = Math.sqrt(1 - v * v) * rand(0.35, 1);
+      let cy = C.yc + v * C.ry, cr = C.rx;
+      if (C.cone) { const tt = (j + 0.5) / C.n; cy = C.yc - C.ry + tt * C.ry * 2; cr = C.rx * (1.15 - tt); }
+      _p.set(x + Math.cos(u) * rr * cr * scale, cy * scale, z + Math.sin(u) * rr * cr * scale);
+      if (C.flat) _e.set(Math.PI / 2 - rand(0.15, 0.45), rand(0, 6.28), 0, 'YXZ'); else _e.set(rand(-C.tilt, C.tilt), rand(0, 6.28), rand(-0.3, 0.3), 'YXZ');
+      _q.setFromEuler(_e); const cs = scale * rand(0.8, 1.15); _s.set(cs, cs, cs); _m.compose(_p, _q, _s); cards.setMatrixAt(kc++, _m);
+    }
+  });
+  trunks.castShadow = true; cards.castShadow = true; trunks.frustumCulled = false; cards.frustumCulled = false;
+  return [trunks, cards];
+}
+
 export class ProceduralRoad {
   constructor(scene, style) {
     this.scene = scene; this.style = style;
@@ -77,7 +99,10 @@ export class ProceduralRoad {
   }
   disposeChunk(ch) {
     this.group.remove(ch.group);
-    ch.group.traverse((o) => { if (o.isMesh || o.isInstancedMesh) { o.geometry.dispose(); } });
+    ch.group.traverse((o) => {
+      if (o.isInstancedMesh) { o.dispose(); return; }          // frees the instance matrices; geometry is shared
+      if (o.isMesh && !o.userData.shared) o.geometry.dispose();
+    });
   }
   obstaclesNear(playerIndex) {
     const out = [];
@@ -197,16 +222,16 @@ export class ProceduralRoad {
     {
       const s = rand(s0 + 20, s1 - 20); const side = ci % 2 === 0 ? -1 : 1; const p = this.pointAt(s);
       const bb = new THREE.Group(); const mat = M.billboards[ci % M.billboards.length];
-      const panel = new THREE.Mesh(M.bbPanelGeo, [M.rail, M.rail, M.rail, M.rail, mat, M.rail]); panel.position.set(0, 7.5, 0); bb.add(panel);
-      for (const dx of [-3.5, 3.5]) { const post = new THREE.Mesh(M.bbPostGeo, M.rail); post.position.set(dx, 2.25, 0); bb.add(post); }
+      const panel = new THREE.Mesh(M.bbPanelGeo, [M.rail, M.rail, M.rail, M.rail, mat, M.rail]); panel.position.set(0, 7.5, 0); panel.userData.shared = true; bb.add(panel);
+      for (const dx of [-3.5, 3.5]) { const post = new THREE.Mesh(M.bbPostGeo, M.rail); post.position.set(dx, 2.25, 0); post.userData.shared = true; bb.add(post); }
       bb.position.set(p.x + p.rx * side * 19, 0, p.z + p.rz * side * 19); bb.rotation.y = p.h - side * 0.55; g.add(bb);
       const c = Math.cos(bb.rotation.y), sn = Math.sin(bb.rotation.y);
       for (const dx of [-3.5, 3.5]) obstacles.push({ type: 'circle', x: bb.position.x + dx * c, z: bb.position.z - dx * sn, r: 0.3 });
       if (ci % 3 === 1) {
         const gs = (s0 + s1) / 2; const gp = this.pointAt(gs); const ga = new THREE.Group();
-        for (const sx of [-1, 1]) { const post = new THREE.Mesh(M.gantryPostGeo, M.rail); post.position.set(sx * (ROAD_W / 2 + 1.2), 3.75, 0); ga.add(post); obstacles.push({ type: 'circle', x: gp.x + gp.rx * sx * (ROAD_W / 2 + 1.2), z: gp.z + gp.rz * sx * (ROAD_W / 2 + 1.2), r: 0.4 }); }
-        const beam = new THREE.Mesh(M.gantryBeamGeo, M.rail); beam.position.set(0, 7.5, 0); ga.add(beam);
-        const sign = new THREE.Mesh(M.gantrySignGeo, [M.rail, M.rail, M.rail, M.rail, M.sign, M.rail]); sign.position.set(0, 6, 0.2); ga.add(sign);
+        for (const sx of [-1, 1]) { const post = new THREE.Mesh(M.gantryPostGeo, M.rail); post.position.set(sx * (ROAD_W / 2 + 1.2), 3.75, 0); post.userData.shared = true; ga.add(post); obstacles.push({ type: 'circle', x: gp.x + gp.rx * sx * (ROAD_W / 2 + 1.2), z: gp.z + gp.rz * sx * (ROAD_W / 2 + 1.2), r: 0.4 }); }
+        const beam = new THREE.Mesh(M.gantryBeamGeo, M.rail); beam.position.set(0, 7.5, 0); beam.userData.shared = true; ga.add(beam);
+        const sign = new THREE.Mesh(M.gantrySignGeo, [M.rail, M.rail, M.rail, M.rail, M.sign, M.rail]); sign.position.set(0, 6, 0.2); sign.userData.shared = true; ga.add(sign);
         ga.position.set(gp.x, 0, gp.z); ga.rotation.y = gp.h; g.add(ga);
       }
     }

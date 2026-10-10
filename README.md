@@ -13,8 +13,10 @@ Download the newest `KidCars-v1.N.apk` from the Releases page onto the phone and
 ## Playing
 
 - Landscape only. Big buttons: ◀ ▶ steer, **GO** accelerates, **STOP** brakes, 📣 horn, ⚡ boost, 📷 changes camera.
-- Garage: swipe through the seven cars with ‹ ›, pick a colour, pick a world (country / desert / city / snow)
+- Garage: swipe through the seven cars with ‹ ›, pick a colour, pick a world (country / desert / city / snow / **Lenasia**)
   and time of day (day / sunset / night), toggle traffic, sound, and tilt-to-steer.
+- Lenasia mode is a free-roam map of the real suburb built from OpenStreetMap data (`app/src/main/assets/www/lenasia.json`,
+  made by `game/tools/osm2map.mjs` from an OSM export). You start next to Trade Route Mall; the mini-map shows streets and landmarks.
 
 ## Project layout
 
@@ -35,3 +37,4 @@ Car models (CC-BY / MIT, used with attribution):
 - Tesla Model 3 — "Tesla 2018 Model 3" by Ameer Studio on Sketchfab (CC-BY)
 
 Textures and backdrops generated with Higgsfield. Built with three.js.
+Map data © OpenStreetMap contributors, ODbL.
