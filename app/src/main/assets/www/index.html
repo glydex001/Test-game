@@ -16,8 +16,22 @@
     <div class="unit">km/h</div>
   </div>
   <div id="dist">0.0 km</div>
+  <div id="mission"><span id="marrow">➤</span><span id="micon">⭐</span><span id="mtext"></span><span id="mprog"></span></div>
+  <div id="starcount"><span>⭐</span><b id="starnum">0</b></div>
   <button id="btnPause" class="iconbtn" aria-label="Pause">❚❚</button>
-  <button id="btnCam" class="iconbtn cam" aria-label="Camera">📷</button>
+  <button id="btnCam" class="iconbtn cam" aria-label="Camera view">🎥</button>
+  <button id="btnPhoto" class="iconbtn photo" aria-label="Take a photo">📸</button>
+  <div id="flash"></div>
+  <div id="polaroid" class="hidden"><img id="polaimg" alt=""><div class="polatxt">📸 Nice shot!</div></div>
+  <div id="pauseov" class="hidden">
+    <div class="pausecard">
+      <div class="pausetitle">PAUSED</div>
+      <button id="btnResume">▶ KEEP DRIVING</button>
+      <button id="btnGarage">🏠 Garage</button>
+    </div>
+  </div>
+  <div id="toast" class="hidden"><div id="toastbig"></div><div id="toasttxt"></div></div>
+  <div id="confetti"></div>
 
   <div id="leftpad">
     <button class="ctl steer" id="btnLeft" aria-label="Left">◀</button>
@@ -76,17 +90,28 @@
       <button class="opt" data-time="day">☀️</button>
       <button class="opt" data-time="sunset">🌇</button>
       <button class="opt" data-time="night">🌙</button>
+      <button class="opt" data-time="rain">🌧️</button>
     </div>
     <div class="optrow" id="miscRow">
       <button class="opt" id="optTraffic">🚗🚙</button>
       <button class="opt" id="optSound">🔊</button>
       <button class="opt" id="optTilt">📱</button>
       <button class="opt" id="optCtl">🎡</button>
+      <button class="opt" id="optEco" title="Eco mode: cooler phone">🔋</button>
     </div>
   </div>
 
   <div id="colors"></div>
+  <button id="btnBook" aria-label="Sticker book">📒<span id="bookstars">⭐ 0</span></button>
+  <button id="btnLock" class="hidden" aria-label="Parent lock (hold)"><span>🔓</span><i id="lockring"></i></button>
+  <div id="lockhint" class="hidden">Hold 🔒 for 2 seconds to unlock settings</div>
   <button id="btnPlay">DRIVE</button>
+  <div id="book" class="hidden">
+    <div class="bookcard">
+      <div class="bookhead"><span>📒 My Stickers</span><span id="bookstats"></span><button id="btnBookClose">✕</button></div>
+      <div id="bookgrid"></div>
+    </div>
+  </div>
 </div>
 
 <div id="loading">

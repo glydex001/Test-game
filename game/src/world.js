@@ -76,7 +76,11 @@ export function createWorld(scene, renderer) {
     gantryPostGeo: new THREE.BoxGeometry(0.5, 7.5, 0.5), gantryBeamGeo: new THREE.BoxGeometry(ROAD_W + 3, 0.5, 0.5), gantrySignGeo: new THREE.BoxGeometry(12, 3, 0.2),
     lamp: std({ color: 0x9aa0a6, roughness: 0.4, metalness: 0.8 }),
     lampGlow: std({ color: 0xfff2c0, emissive: 0xffe0a0, emissiveIntensity: 0 }),
+    pool: new THREE.MeshBasicMaterial({ color: 0xffd58a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }),
   };
+  { M.poolGeo = new THREE.CircleGeometry(5.5, 20); M.poolGeo.rotateX(-Math.PI / 2); M.poolGeo.translate(2.0, 0.06, 0); }
+  // soft radial falloff for the lamp pools
+  { const cv = document.createElement('canvas'); cv.width = cv.height = 128; const x = cv.getContext('2d'); const gr = x.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, 128, 128); M.pool.map = new THREE.CanvasTexture(cv); M.pool.alphaMap = M.pool.map; }
   // lamp post geometry: pole + arm pointing to +x
   {
     const pole = new THREE.CylinderGeometry(0.08, 0.12, 7, 6); pole.translate(0, 3.5, 0);
@@ -191,10 +195,11 @@ export function createWorld(scene, renderer) {
   };
 
   W.setTime = (time) => {
-    const w = W.current; const night = time === 'night';
+    const w = W.current; const night = time === 'night'; const rain = time === 'rain';
     const u = sky.material.uniforms;
     let elev, azim;
     if (time === 'day') { elev = 48; azim = 160; u.turbidity.value = 2.2; u.rayleigh.value = 1.0; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.8; }
+    else if (rain) { elev = 35; azim = 160; u.turbidity.value = 20; u.rayleigh.value = 0.2; u.mieCoefficient.value = 0.1; u.mieDirectionalG.value = 0.999; }
     else if (time === 'sunset') { elev = 4; azim = 235; u.turbidity.value = 10; u.rayleigh.value = 3; u.mieCoefficient.value = 0.006; u.mieDirectionalG.value = 0.85; }
     else { elev = -4; azim = 180; u.turbidity.value = 2; u.rayleigh.value = 0.3; u.mieCoefficient.value = 0.002; u.mieDirectionalG.value = 0.7; }
     const phi = THREE.MathUtils.degToRad(90 - elev), theta = THREE.MathUtils.degToRad(azim);
@@ -206,17 +211,22 @@ export function createWorld(scene, renderer) {
     scene.add(sky);
     scene.environment = W.envRT.texture; scene.background = null;
     if (time === 'day') { sun.color.setHex(0xfff4e0); sun.intensity = 4.2; hemi.color.setHex(0xbfd8ff); hemi.groundColor.setHex(0x6b705c); hemi.intensity = 1.0; scene.environmentIntensity = 1.0; }
+    else if (rain) { sun.color.setHex(0xcfd6e0); sun.intensity = 1.1; hemi.color.setHex(0x9aa6b8); hemi.groundColor.setHex(0x3a3f44); hemi.intensity = 1.6; scene.environmentIntensity = 0.9; }
     else if (time === 'sunset') { sun.color.setHex(0xffa860); sun.intensity = 3.2; hemi.color.setHex(0xf2b58a); hemi.groundColor.setHex(0x4a3f36); hemi.intensity = 0.8; scene.environmentIntensity = 1.0; }
     else { sun.color.setHex(0x8fa0d8); sun.intensity = 1.3; hemi.color.setHex(0x3c4e80); hemi.groundColor.setHex(0x141418); hemi.intensity = 1.5; scene.environmentIntensity = 0.7; }
     W.sunDir = sunPos.clone().normalize(); if (night) W.sunDir.set(0.3, 0.8, -0.2).normalize();
-    scene.fog = new THREE.Fog(w.fog[time], 40, w.fogFar * (night ? 0.7 : 1));
-    ringMat.color.setHex(night ? 0x2a3350 : time === 'sunset' ? 0xffd0a8 : 0xffffff);
+    scene.fog = new THREE.Fog(rain ? 0x8e98a6 : w.fog[time], rain ? 20 : 40, w.fogFar * (night ? 0.7 : rain ? 0.55 : 1));
+    ringMat.color.setHex(night ? 0x2a3350 : time === 'sunset' ? 0xffd0a8 : rain ? 0x7d8794 : 0xffffff);
+    // wet road: shinier, reflects the sky
+    M.road.roughness = rain ? 0.3 : 1.0; M.road.envMapIntensity = rain ? 1.6 : 0.6; M.road.color.setHex(rain ? 0x8a8a8a : 0xffffff);
+    M.pool.opacity = night ? 0.5 : 0; W.rain = rain;
     for (const m of M.billboards) m.emissiveIntensity = night ? 0.9 : 0;
     M.sign.emissiveIntensity = night ? 0.9 : 0;
     fMats.forEach((m) => { m.emissiveIntensity = night ? 0.55 : 0; m.emissive.setHex(night ? 0xffe3b0 : 0xffffff); });
     M.lampGlow.emissiveIntensity = night ? 5 : 0;
-    cloudMat.color.setHex(night ? 0x3a4260 : time === 'sunset' ? 0xffc9a0 : 0xffffff); cloudMat.opacity = night ? 0.6 : 0.95;
-    flareHolder.visible = !night;
+    w.nightNow = night; if (W.road && W.road.signMats) for (const m of W.road.signMats) m.emissiveIntensity = night ? 0.8 : 0;
+    cloudMat.color.setHex(night ? 0x3a4260 : time === 'sunset' ? 0xffc9a0 : rain ? 0x6f7784 : 0xffffff); cloudMat.opacity = night ? 0.6 : rain ? 1 : 0.95;
+    flareHolder.visible = !night && !rain;
     W.night = night;
   };
 

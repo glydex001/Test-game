@@ -12,10 +12,15 @@ Download the newest `KidCars-v1.N.apk` from the Releases page onto the phone and
 
 ## Playing
 
-- Landscape only. Steering wheel (drag to turn, springs back), **GO** and **STOP** pedals, 📣 horn, ⚡ boost, 📷 changes camera.
-  The garage has a 🎡/🕹️ switch to use big ◀ ▶ buttons instead of the wheel.
+- Landscape only. Steering wheel (drag to turn, springs back), **GO** and **STOP** pedals, 📣 horn, ⚡ boost, 🎥 changes camera,
+  📸 takes a photo (saved to the phone's Pictures/Kid Cars album). The garage has a 🎡/🕹️ switch to use big ◀ ▶ buttons instead of the wheel.
+- Things to do: ⭐ stars to collect along the road, and missions (collect stars, reach a speed, pass cars, drive to a
+  place in Lenasia, deliver a Glyde-X recliner from the showroom to a customer's street). Stars and missions earn
+  stickers in the 📒 sticker book. Progress is saved on the phone.
 - Garage: swipe through the seven cars with ‹ ›, pick a colour, pick a world (country / desert / city / snow / **Lenasia**)
-  and time of day (day / sunset / night), toggle traffic, sound, and tilt-to-steer.
+  and weather (day / sunset / night / rain), toggle traffic, sound, tilt-to-steer and 🔋 eco mode (30 fps, cooler phone;
+  ✨ turns the full graphics back on).
+- ❚❚ pauses (also the phone's back button); switching apps pauses automatically.
 - Lenasia mode is a free-roam map of the real suburb built from OpenStreetMap data (`app/src/main/assets/www/lenasia.json`,
   made by `game/tools/osm2map.mjs` from an OSM export). You start next to Trade Route Mall; the mini-map shows streets and landmarks.
 

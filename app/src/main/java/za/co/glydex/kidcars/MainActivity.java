@@ -9,6 +9,17 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.JavascriptInterface;
+import android.content.ContentValues;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Environment;
+import android.provider.MediaStore;
+import android.util.Base64;
+import android.widget.Toast;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
@@ -53,8 +64,39 @@ public class MainActivity extends AppCompatActivity {
                 return loader.shouldInterceptRequest(request.getUrl());
             }
         });
+        web.addJavascriptInterface(new Bridge(), "Android");
         web.loadUrl("https://appassets.androidplatform.net/assets/www/index.html");
         hideSystemBars();
+    }
+
+    /** Small bridge for the game: save a photo (JPEG, base64) to the phone's Pictures/Kid Cars album. */
+    private class Bridge {
+        @JavascriptInterface
+        public boolean savePhoto(String base64) {
+            try {
+                byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
+                String name = "KidCars-" + System.currentTimeMillis() + ".jpg";
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ContentValues v = new ContentValues();
+                    v.put(MediaStore.Images.Media.DISPLAY_NAME, name);
+                    v.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+                    v.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Kid Cars");
+                    Uri uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
+                    if (uri == null) return false;
+                    try (OutputStream out = getContentResolver().openOutputStream(uri)) { out.write(bytes); }
+                } else {
+                    File dir = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Kid Cars");
+                    if (!dir.exists()) dir.mkdirs();
+                    File f = new File(dir, name);
+                    try (FileOutputStream out = new FileOutputStream(f)) { out.write(bytes); }
+                    android.media.MediaScannerConnection.scanFile(MainActivity.this, new String[]{ f.getAbsolutePath() }, new String[]{ "image/jpeg" }, null);
+                }
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Saved to Photos \u2713", Toast.LENGTH_SHORT).show());
+                return true;
+            } catch (Exception e) {
+                return false;
+            }
+        }
     }
 
     private void hideSystemBars() {
@@ -79,7 +121,7 @@ public class MainActivity extends AppCompatActivity {
     public void onBackPressed() {
         // The game has its own pause button; back goes to the garage via JS, or exits from the garage.
         if (web != null) {
-            web.evaluateJavascript("(function(){ if (window.__kidcars && window.__kidcars.state() === 'drive') { document.getElementById('btnPause').dispatchEvent(new PointerEvent('pointerdown')); return 'paused'; } return 'exit'; })()",
+            web.evaluateJavascript("(function(){ return (window.__kidcars && window.__kidcars.back) ? window.__kidcars.back() : 'exit'; })()",
                     value -> { if (value != null && value.contains("exit")) finish(); });
         } else {
             super.onBackPressed();

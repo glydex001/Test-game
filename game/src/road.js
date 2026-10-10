@@ -1,5 +1,6 @@
 // Procedural endless road: a real curved centre line, built in chunks, with scenery and obstacles.
 import * as THREE from 'three';
+import { addStar, removeStars } from './goals.js';
 
 export const DS = 4;                 // metres between centre-line samples
 export const CHUNK = 64;             // samples per chunk (256 m)
@@ -98,7 +99,7 @@ export class ProceduralRoad {
     for (let ci = need0; ci <= need1; ci++) if (!this.chunks.has(ci)) this.chunks.set(ci, this.buildChunk(ci));
   }
   disposeChunk(ch) {
-    this.group.remove(ch.group);
+    this.group.remove(ch.group); removeStars('c' + ch.ci);
     ch.group.traverse((o) => {
       if (o.isInstancedMesh) { o.dispose(); return; }          // frees the instance matrices; geometry is shared
       if (o.isMesh && !o.userData.shared) o.geometry.dispose();
@@ -218,6 +219,11 @@ export class ProceduralRoad {
       }
       ims.forEach((im, j) => { im.frustumCulled = false; im.castShadow = !!sc.parts[j].shadow; g.add(im); });
     }
+    // stars to collect: a few short lines of five, in a lane (not in the first chunk, where the car starts)
+    if (ci > 0) for (let n = 0; n < 3; n++) {
+      const s = rand(s0 + 12, s1 - 30); const lane = LANES[Math.floor(rand(0, 3))];
+      for (let k = 0; k < 5; k++) { const p = this.pointAt(s + k * 5); addStar(p.x + p.rx * lane, p.z + p.rz * lane, 'c' + ci); }
+    }
     // billboard (one per chunk) + gantry every 3rd chunk
     {
       const s = rand(s0 + 20, s1 - 20); const side = ci % 2 === 0 ? -1 : 1; const p = this.pointAt(s);
@@ -251,13 +257,13 @@ export class ProceduralRoad {
         }
         s += rand(14, 24);
       }
-      const nl = Math.floor((s1 - s0) / 26) * 2; const lamps = new THREE.InstancedMesh(M.lampGeo, M.lamp, nl); const glows = new THREE.InstancedMesh(M.lampGlowGeo, M.lampGlow, nl); let k = 0;
+      const nl = Math.floor((s1 - s0) / 26) * 2; const lamps = new THREE.InstancedMesh(M.lampGeo, M.lamp, nl); const glows = new THREE.InstancedMesh(M.lampGlowGeo, M.lampGlow, nl); const pools = new THREE.InstancedMesh(M.poolGeo, M.pool, nl); let k = 0;
       for (let ls = s0 + 5; ls < s1 - 5 && k < nl; ls += 26) for (const sx of [-1, 1]) {
         const p = this.pointAt(ls); const x = p.x + p.rx * sx * (ROAD_W / 2 + 1.0), z = p.z + p.rz * sx * (ROAD_W / 2 + 1.0);
-        placeInstance(lamps, k, x, 0, z, p.h + (sx === 1 ? Math.PI : 0), 1); placeInstance(glows, k, x, 0, z, p.h + (sx === 1 ? Math.PI : 0), 1); k++;
+        placeInstance(lamps, k, x, 0, z, p.h + (sx === 1 ? Math.PI : 0), 1); placeInstance(glows, k, x, 0, z, p.h + (sx === 1 ? Math.PI : 0), 1); placeInstance(pools, k, x, 0, z, p.h + (sx === 1 ? Math.PI : 0), 1); k++;
         obstacles.push({ type: 'circle', x, z, r: 0.2 });
       }
-      lamps.count = k; glows.count = k; g.add(lamps, glows);
+      lamps.count = k; glows.count = k; pools.count = k; pools.renderOrder = 2; g.add(lamps, glows, pools);
     }
     this.group.add(g);
     return { ci, i0, i1, group: g, obstacles };

@@ -1,6 +1,7 @@
 // Free-roam map mode built from OpenStreetMap data (roads, buildings, parks, water) — e.g. Lenasia.
 import * as THREE from 'three';
 import { buildTrees } from './road.js';
+import { addStar, removeStars } from './goals.js';
 
 const TILE = 400;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -17,7 +18,7 @@ export class OsmWorld {
     this.group = new THREE.Group(); scene.add(this.group);
     this.nodes = data.nodes; this.roads = data.roads;
     this.hasRails = false; this.isMap = true;
-    this.tiles = new Map(); this.roadMeshes = new Map(); this.areaMeshes = new Map();
+    this.tiles = new Map(); this.roadMeshes = new Map(); this.areaMeshes = new Map(); this.signCache = new Map(); this.signMats = [];
     this.buildIndex();
     this.makeMaterials();
   }
@@ -93,6 +94,7 @@ export class OsmWorld {
       water: std({ color: 0x3f7fb0, roughness: 0.1, metalness: 0.3, envMapIntensity: 1.5 }), farm: std({ map: st.tex('sand'), color: 0xb8a070, roughness: 1 }),
       lot: std({ map: st.tex('pavement'), color: 0xaaaaaa, roughness: 1 }), scrub: std({ map: st.tex('grass'), color: 0xa09c6a, roughness: 1 }),
       railbed: std({ color: 0x55504a, roughness: 1 }), railsteel: std({ color: 0x8a8d90, roughness: 0.4, metalness: 0.8 }),
+      white: std({ color: 0xf2efe6, roughness: 0.8 }), dome: std({ color: 0x3f9d7a, roughness: 0.35, metalness: 0.2 }), gold: std({ color: 0xd0b46c, roughness: 0.3, metalness: 0.7 }), navy: std({ color: 0x17283c, roughness: 0.6 }),
     };
     for (const m of [this.mat.park, this.mat.pitch, this.mat.farm, this.mat.lot, this.mat.scrub]) { m.map = m.map.clone(); m.map.repeat.set(1 / 8, 1 / 8); m.map.needsUpdate = true; }
     this.houseGeo = new THREE.BoxGeometry(1, 1, 1); this.houseGeo.translate(0, 0.5, 0);
@@ -120,7 +122,7 @@ export class OsmWorld {
     return out;
   }
   disposeTile(t) {
-    this.group.remove(t.group);
+    this.group.remove(t.group); removeStars('t' + t.tx + '_' + t.tz);
     t.group.traverse((o) => { if (o.isInstancedMesh) { o.dispose(); return; } if (o.geometry && !o.userData.shared) o.geometry.dispose(); });
     for (const ri of t.roads) { const rm = this.roadMeshes.get(ri); if (rm && --rm.refs <= 0) { this.group.remove(rm.mesh); rm.mesh.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); this.roadMeshes.delete(ri); } }
     for (const ai of t.areas) { const am = this.areaMeshes.get(ai); if (am && --am.refs <= 0) { this.group.remove(am.mesh); am.mesh.geometry.dispose(); this.areaMeshes.delete(ai); } }
@@ -138,6 +140,8 @@ export class OsmWorld {
     if (discs.length) { const geos = discs.map(([, p, w, y]) => { const c = new THREE.CircleGeometry(w / 2, 14); c.rotateX(-Math.PI / 2); c.translate(p[0], y + 0.002, p[1]); const uv = c.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / 7, uv.getY(i) * w / 7); return c; }); const dm = new THREE.Mesh(mergeGeos(geos), this.mat.road); dm.receiveShadow = true; g.add(dm); }
     // areas (parks, water, pitches, ...)
     for (const ai of (this.tileAreas.get(tk) || [])) { let am = this.areaMeshes.get(ai); if (!am) { const mesh = this.buildArea(ai); if (!mesh) continue; am = { refs: 0, mesh }; this.areaMeshes.set(ai, am); this.group.add(mesh); } am.refs++; }
+    // petrol stations
+    for (const p of (this.tilePois.get(tk) || [])) if (p.k === 'fuel' && !this.nearBuilding(p.c[0], p.c[1], 6)) this.buildFuel(p, g, obstacles);
     // mapped buildings
     for (const bi of (this.tileBuildings.get(tk) || [])) { const b = this.data.buildings[bi]; const mesh = this.buildBuilding(b); if (!mesh) continue; g.add(mesh); const ob = obbOf(b.p); obstacles.push({ type: 'box', ...ob }); }
     // procedural houses along residential streets + street trees
@@ -199,6 +203,24 @@ export class OsmWorld {
     for (const t of (this.tileTrees.get(tk) || [])) { trees.push({ x: t[0], z: t[1], scale: 0.8 + hash(t[0] | 0, t[1] | 0) * 0.5, rot: 0 }); obstacles.push({ type: 'circle', x: t[0], z: t[1], r: 0.5 }); }
     for (const ai of (this.tileAreas.get(tk) || [])) { const a = this.data.areas[ai]; if (a.k !== 'park' && a.k !== 'grass') continue; const c = centroid(a.p); if (c[0] < x0 || c[0] >= x0 + TILE || c[1] < z0 || c[1] >= z0 + TILE) continue; const bb = bboxOf(a.p); const n = Math.min(14, Math.floor((bb[2] - bb[0]) * (bb[3] - bb[1]) / 2500)); for (let k = 0; k < n; k++) { const px = bb[0] + hash(ai, k, 1) * (bb[2] - bb[0]), pz = bb[1] + hash(ai, k, 2) * (bb[3] - bb[1]); if (!pointInPoly(px, pz, a.p)) continue; if (this.nearest(px, pz).d < 8) continue; trees.push({ x: px, z: pz, scale: 0.9 + hash(ai, k, 3) * 0.5, rot: 0 }); obstacles.push({ type: 'circle', x: px, z: pz, r: 0.5 }); } }
     if (trees.length) { const [tr, cd] = buildTrees(this.style.treeStyles.oakTree, trees); tr.userData.shared = true; cd.userData.shared = true; g.add(tr, cd); }
+    // stars along the streets (left lane of travel, both directions), a line of three every ~90 m
+    { let nStars = 0;
+      for (const ri of roads) {
+        const r = this.roads[ri]; if (r.t === 'service' || r.t === 'track' || r.len < 60) continue;
+        let acc = 30 + hash(ri, 1) * 40, seq = 0;
+        for (let i = 0; i < r.n.length - 1 && nStars < 30; i++) {
+          const a = N[r.n[i]], b = N[r.n[i + 1]]; const L = r.seg[i]; const ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L; const rx = -uz, rz = ux;
+          for (; acc + 12 < L && nStars < 30; acc += 90) {
+            seq++; const px = a[0] + ux * acc, pz = a[1] + uz * acc;
+            if (px < x0 || px >= x0 + TILE || pz < z0 || pz >= z0 + TILE) continue;
+            const side = hash(ri, seq, 5) < 0.5 ? -1 : 1; const off = side * r.w / 4;
+            for (let k = 0; k < 3; k++) addStar(px + ux * k * 5 + rx * off, pz + uz * k * 5 + rz * off, 't' + tx + '_' + tz);
+            nStars += 3;
+          }
+          acc -= L;
+        }
+      }
+    }
     // Glyde-X showroom landmark
     if (this.style.showroomAt && Math.floor(this.style.showroomAt[0] / TILE) === tx && Math.floor(this.style.showroomAt[1] / TILE) === tz) {
       const b = this.style.makeBuilding(true); const [sx, sz, syaw] = this.style.showroomAt; b.group.position.set(sx, 0, sz); b.group.rotation.y = syaw; g.add(b.group);
@@ -253,10 +275,71 @@ export class OsmWorld {
     if (b.p.length < 3) return null;
     const shape = new THREE.Shape(b.p.map((p) => new THREE.Vector2(p[0], -p[1])));
     const geo = new THREE.ExtrudeGeometry(shape, { depth: b.h, bevelEnabled: false }); geo.rotateX(-Math.PI / 2);
-    const st = this.style; const big = b.h > 5.5;
-    const mat = big ? st.fMats[/mall|retail|commercial|supermarket/.test(b.k + b.name) ? 2 : 0] : this.mat.house;
+    const st = this.style; const big = b.h > 5.5; const label = b.k + ' ' + (b.name || '');
+    const isMosque = /masjid|mosque|islam|jumma|sufi|musallah/i.test(label);
+    const isTemple = /temple|koil|mandir|sai centre|hindu/i.test(label);
+    const isChurch = /church|chapel|catholic|kingdom hall/i.test(label);
+    const isShop = /mall|retail|commercial|supermarket|shop|plaza|centre|center|kfc|mcdonald|hardware|station/i.test(label);
+    const mat = (isMosque || isTemple || isChurch) ? this.mat.white : big ? st.fMats[isShop ? 2 : 0] : this.mat.house;
     const m = new THREE.Mesh(geo, [this.mat.roofFlat, mat]); m.castShadow = true; m.receiveShadow = true;
+    if (!b.name && !isMosque) return m;
+    const g = new THREE.Group(); g.add(m);
+    const c = b.c; const bb = bboxOf(b.p); const span = Math.min(bb[2] - bb[0], bb[3] - bb[1]);
+    // landmark shapes so places are recognisable from the road
+    if (isMosque) {
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(Math.min(6, span * 0.3), 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), this.mat.dome); dome.position.set(c[0], b.h, c[1]); dome.castShadow = true; g.add(dome);
+      const mr = Math.min(6, span * 0.3); const cres = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.08, 6, 16, Math.PI * 1.5), this.mat.gold); cres.position.set(c[0], b.h + mr + 0.7, c[1]); g.add(cres);
+      const mh = b.h + 9 + Math.min(8, span * 0.4); const mx = bb[0] + 1.5, mz = bb[1] + 1.5;
+      const min = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.1, mh, 10), this.mat.white); min.position.set(mx, mh / 2, mz); min.castShadow = true; g.add(min);
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(1.3, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), this.mat.dome); cap.position.set(mx, mh, mz); g.add(cap);
+    } else if (isTemple) {
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(Math.min(3, span * 0.2), 5, 4), this.mat.gold); sp.position.set(c[0], b.h + 2.5, c[1]); sp.rotation.y = Math.PI / 4; sp.castShadow = true; g.add(sp);
+    } else if (isChurch) {
+      const tw = new THREE.Mesh(new THREE.BoxGeometry(3, b.h + 4, 3), this.mat.white); tw.position.set(bb[0] + 2, (b.h + 4) / 2, bb[1] + 2); tw.castShadow = true; g.add(tw);
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(2.2, 4, 4), this.mat.roofFlat); sp.position.set(bb[0] + 2, b.h + 6, bb[1] + 2); sp.rotation.y = Math.PI / 4; g.add(sp);
+    }
+    // name board on the roof edge nearest the road
+    if (b.name) {
+      const nr = this.nearest(c[0], c[1]); let best = null, bd = Infinity;
+      for (let i = 0; i < b.p.length; i++) { const a = b.p[i], q = b.p[(i + 1) % b.p.length]; const mx = (a[0] + q[0]) / 2, mz = (a[1] + q[1]) / 2; const L = Math.hypot(q[0] - a[0], q[1] - a[1]); if (L < 4) continue; const d = nr.px != null ? Math.hypot(mx - nr.px, mz - nr.pz) : 0; if (d < bd) { bd = d; best = { a, q, mx, mz, L }; } }
+      if (best) {
+        const w = Math.min(16, Math.max(6, best.L * 0.8)); const h = w * 0.16;
+        const tex = this.nameTexture(b.name, isMosque ? '🕌' : isTemple ? '🛕' : isChurch ? '⛪' : /school/i.test(label) ? '🏫' : isShop ? '🛍️' : '');
+        const board = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.25), [this.mat.navy, this.mat.navy, this.mat.navy, this.mat.navy, tex, tex]);
+        // face outward: edge direction → outward normal is the side away from the centroid
+        const ex = best.q[0] - best.a[0], ez = best.q[1] - best.a[1]; let nx = -ez, nz = ex; const nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
+        if ((best.mx - c[0]) * nx + (best.mz - c[1]) * nz < 0) { nx = -nx; nz = -nz; }
+        board.position.set(best.mx + nx * 0.3, b.h + h / 2 + 0.4, best.mz + nz * 0.3); board.rotation.y = Math.atan2(nx, nz); g.add(board);
+      }
+    }
+    return g;
+  }
+  nameTexture(name, icon) {
+    const key = icon + name; if (this.signCache.has(key)) return this.signCache.get(key);
+    const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 160; const x = cv.getContext('2d');
+    x.fillStyle = '#17283C'; x.fillRect(0, 0, 1024, 160); x.fillStyle = '#D0B46C'; x.fillRect(0, 146, 1024, 14);
+    x.fillStyle = '#ffffff'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    let size = 84; x.font = `900 ${size}px Poppins, "Segoe UI", Arial, sans-serif`;
+    const txt = (icon ? icon + '  ' : '') + name.toUpperCase();
+    while (x.measureText(txt).width > 960 && size > 34) { size -= 4; x.font = `900 ${size}px Poppins, "Segoe UI", Arial, sans-serif`; }
+    x.fillText(txt, 512, 78);
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+    const m = new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: 0xffffff, emissiveIntensity: this.style.nightNow ? 0.8 : 0, roughness: 0.6 });
+    this.signCache.set(key, m); this.signMats.push(m);
     return m;
+  }
+  // petrol station canopies at fuel POIs
+  buildFuel(p, g, obstacles) {
+    const nr = this.nearest(p.c[0], p.c[1]); if (nr.d > 1e8) return;
+    const h = nr.h;
+    const grp = new THREE.Group(); grp.position.set(p.c[0], 0, p.c[1]); grp.rotation.y = h;
+    const wp = (lx, lz) => [p.c[0] + lx * Math.cos(h) + lz * Math.sin(h), p.c[1] - lx * Math.sin(h) + lz * Math.cos(h)];
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(14, 0.6, 9), this.mat.white); roof.position.y = 4.8; roof.castShadow = true; grp.add(roof);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(14.2, 0.9, 9.2), this.mat.navy); band.position.y = 4.1; grp.add(band);
+    for (const [px, pz] of [[-5, -3], [5, -3], [-5, 3], [5, 3]]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 4, 8), this.mat.white); post.position.set(px, 2, pz); grp.add(post); const [ox, oz] = wp(px, pz); obstacles.push({ type: 'circle', x: ox, z: oz, r: 0.25 }); }
+    for (const px of [-2.5, 2.5]) { const pump = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.7, 0.5), this.mat.gold); pump.position.set(px, 0.85, 0); grp.add(pump); const [ox, oz] = wp(px, 0); obstacles.push({ type: 'box', x: ox, z: oz, hw: 0.5, hl: 0.3, h }); }
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(3, 1, 0.2), [this.mat.navy, this.mat.navy, this.mat.navy, this.mat.navy, this.nameTexture(p.name || 'Petrol', '⛽'), this.mat.navy]); sign.position.set(0, 5.9, 0); grp.add(sign);
+    g.add(grp);
   }
 
   // ---------------------------------------------------------------- traffic along the road graph (drive on the left)
