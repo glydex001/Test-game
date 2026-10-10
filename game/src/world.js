@@ -192,7 +192,7 @@ export function createWorld(scene, renderer) {
     const cactus = cutoutParts('cactus', 6, 362 / 1059);
     const rock = { geometry: new THREE.DodecahedronGeometry(1.2, 0), material: std({ color: 0xa8825c, roughness: 1 }), y: 0.5, shadow: true };
     W.worlds.desert = {
-      ground: 'sand', groundRepeat: 8, shoulder: 'sand', shoulderTint: 0xffffff, backdrop: 'mesas_desert', backdropH: 110,
+      ground: 'sand', groundRepeat: 8, shoulder: 'sand', shoulderTint: 0xffffff, backdrop: 'mesas_desert', backdropH: 46,
       scatters: [new Scatter(world, cactus, 30, 11, 70, [0.8, 1.6], { billboard: true }), new Scatter(world, [rock], 40, 9, 90, [0.5, 2.4])],
       repeaters: [guardrail()],
       fog: { day: 0xe6d6bd, sunset: 0xf0a66a, night: 0x120f22 }, fogFar: 470,
@@ -279,7 +279,7 @@ export function createWorld(scene, renderer) {
     const w = W.current; const night = time === 'night';
     const u = sky.material.uniforms;
     let elev, azim;
-    if (time === 'day') { elev = 48; azim = 160; u.turbidity.value = 4; u.rayleigh.value = 2.2; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.8; }
+    if (time === 'day') { elev = 48; azim = 160; u.turbidity.value = 2.2; u.rayleigh.value = 1.0; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.8; }
     else if (time === 'sunset') { elev = 4; azim = 235; u.turbidity.value = 10; u.rayleigh.value = 3; u.mieCoefficient.value = 0.006; u.mieDirectionalG.value = 0.85; }
     else { elev = -4; azim = 180; u.turbidity.value = 2; u.rayleigh.value = 0.3; u.mieCoefficient.value = 0.002; u.mieDirectionalG.value = 0.7; }
     const phi = THREE.MathUtils.degToRad(90 - elev), theta = THREE.MathUtils.degToRad(azim);

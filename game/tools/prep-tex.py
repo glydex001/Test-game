@@ -12,7 +12,7 @@ TILES = {  # name: size
 }
 CUTOUTS = {  # name: (max width, crop box or None, soft, hard)
     'tree_oak': (768, None, 18, 60), 'tree_pine': (768, (60, 60, -20, -1), 18, 60), 'tree_snowpine': (768, None, 30, 90), 'cactus': (640, None, 30, 90),
-    'hills_green': (2048, None, 30, 90, True), 'mesas_desert': (2048, 'frac:0,0.42,1,1', 40, 110, True), 'mountains_snow': (2048, None, 25, 80, True), 'skyline_city': (2048, None, 30, 90, True),
+    'hills_green': (2048, None, 30, 90, True), 'mesas_desert': (2048, 'frac:0,0.335,1,0.735', 30, 90, True), 'mountains_snow': (2048, None, 25, 80, True), 'skyline_city': (2048, None, 30, 90, True),
 }
 
 def key(img, soft, hard, top_only=False, extra=None):

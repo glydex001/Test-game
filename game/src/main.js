@@ -298,9 +298,23 @@ function update(dt) {
   }
 }
 
+// Auto quality: if the phone can't keep up, drop resolution and shadow detail once.
+let fpsAcc = 0, fpsN = 0, quality = 2;
+function autoQuality(dt) {
+  if (state !== 'drive') return;
+  fpsAcc += dt; fpsN++;
+  if (fpsAcc < 4) return;
+  const fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0;
+  if (fps < 26 && quality > 0) {
+    quality--;
+    if (quality === 1) { renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.0)); W.sun.shadow.mapSize.set(1024, 1024); W.sun.shadow.map && W.sun.shadow.map.dispose(); W.sun.shadow.map = null; }
+    else { renderer.setPixelRatio(0.8); renderer.shadowMap.enabled = false; }
+    resize();
+  }
+}
 function frame() {
   const dt = Math.min(0.05, clock.getDelta());
-  if (player) { update(dt); renderer.render(scene, camera); }
+  if (player) { update(dt); autoQuality(dt); renderer.render(scene, camera); }
   requestAnimationFrame(frame);
 }
 
