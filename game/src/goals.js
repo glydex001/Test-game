@@ -33,7 +33,8 @@ export const STICKERS = [
   { id: 'night', e: '🌙', n: 'Night Owl', ok: () => P.nightKm >= 1 },
   { id: 'd1', e: '🛋️', n: 'Recliner Delivered', ok: () => P.deliveries >= 1 },
   { id: 'd10', e: '🚚', n: 'Delivery Pro', ok: () => P.deliveries >= 10 },
-  { id: 'cars', e: '🚗', n: 'Drove Every Car', ok: () => Object.keys(P.cars).length >= 7 },
+  { id: 'cars', e: '🚗', n: 'Drove Every Car', ok: () => Object.keys(P.cars).length >= 14 },
+  { id: 'fast', e: '🏎️', n: 'Speed Demon', ok: () => P.bestKmh >= 400 },
   { id: 'horn', e: '📣', n: 'Beep Beep', ok: () => P.horns >= 20 },
   { id: 'photo', e: '📸', n: 'Photographer', ok: () => P.photos >= 1 },
 ];

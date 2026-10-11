@@ -69,23 +69,23 @@ public class MainActivity extends AppCompatActivity {
         hideSystemBars();
     }
 
-    /** Small bridge for the game: save a photo (JPEG, base64) to the phone's Pictures/Kid Cars album. */
+    /** Small bridge for the game: save a photo (JPEG, base64) to the phone's Pictures/Glyde-X Racing album. */
     private class Bridge {
         @JavascriptInterface
         public boolean savePhoto(String base64) {
             try {
                 byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
-                String name = "KidCars-" + System.currentTimeMillis() + ".jpg";
+                String name = "GlydeXRacing-" + System.currentTimeMillis() + ".jpg";
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     ContentValues v = new ContentValues();
                     v.put(MediaStore.Images.Media.DISPLAY_NAME, name);
                     v.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
-                    v.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Kid Cars");
+                    v.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Glyde-X Racing");
                     Uri uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
                     if (uri == null) return false;
                     try (OutputStream out = getContentResolver().openOutputStream(uri)) { out.write(bytes); }
                 } else {
-                    File dir = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Kid Cars");
+                    File dir = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Glyde-X Racing");
                     if (!dir.exists()) dir.mkdirs();
                     File f = new File(dir, name);
                     try (FileOutputStream out = new FileOutputStream(f)) { out.write(bytes); }

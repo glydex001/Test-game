@@ -11,6 +11,14 @@ export const CARS = [
   { id: 'tesla3', name: 'Tesla Model 3', w: 2.18, len: 4.69, maxKmh: 240, accel: 12, handling: 9 },
   { id: 'urus', name: 'Lamborghini Urus', w: 2.26, len: 5.11, maxKmh: 280, accel: 11, handling: 8.5 },
   { id: 'peugeot3008', name: 'Peugeot 3008', w: 2.1, len: 4.45, maxKmh: 190, accel: 8, handling: 8 },
+  // the fast set
+  { id: 'bolide', name: 'Bugatti Bolide', w: 2.12, len: 4.76, maxKmh: 500, accel: 17, handling: 10.5 },
+  { id: 'roadster', name: 'Tesla Roadster', w: 1.88, len: 4.6, maxKmh: 400, accel: 18, handling: 9.5 },
+  { id: 'ferrari599', name: 'Ferrari 599 GTO', w: 2.14, len: 4.71, maxKmh: 335, accel: 14, handling: 9.5 },
+  { id: 'gt40', name: 'Ford GT40', w: 1.81, len: 4.18, maxKmh: 330, accel: 13, handling: 9 },
+  { id: 'gtr', name: 'Nissan GT-R', w: 2.05, len: 4.71, maxKmh: 315, accel: 14, handling: 10 },
+  { id: 'challenger', name: 'Dodge Challenger', w: 2.08, len: 5.03, maxKmh: 280, accel: 11, handling: 7.5 },
+  { id: 'lancia037', name: 'Lancia 037 Rally', w: 1.88, len: 3.92, maxKmh: 220, accel: 9, handling: 9.5 },
 ];
 
 const draco = new DRACOLoader();
@@ -32,9 +40,12 @@ function prepareProto(gltf, isPlayer) {
     for (const m of mats) {
       if (!m) continue;
       if (m.transparent && m.opacity < 0.99) { m.depthWrite = false; }
+      // glass exported with "transmission" makes three.js render the whole scene to a texture every frame — far too
+      // costly on a phone. Plain transparency looks nearly the same from the driver's seat.
+      if (m.transmission > 0) { m.transmission = 0; m.transparent = true; m.opacity = Math.min(m.opacity, 0.45); m.depthWrite = false; m.needsUpdate = true; }
       const n = (m.name || '').toLowerCase();
-      if (/tail|brake|rear.?light|back.?light|lights_?glass_?back|stop/.test(n) && !/front/.test(n)) tailMats.push(m);
-      else if (/head|front.?light|light.*front|lights?front|led|lamp|phare|lights_red|lichter|projector/.test(n) || /^light/.test(n)) headMats.push(m);
+      if (/tail|brake|rear.?light|back.?light|lights_?glass_?back|stop|red_glass/.test(n) && !/front/.test(n)) tailMats.push(m);
+      else if (/head|front.?light|light.*front|lights?front|led|lamp|phare|lights_red|lichter|projector|lightemissive|lighta_material|headlights/.test(n) || /^light/.test(n)) headMats.push(m);
       if (m.envMapIntensity === undefined) m.envMapIntensity = 1;
     }
   });

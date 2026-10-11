@@ -44,9 +44,12 @@ button { border: 0; outline: 0; font-family: inherit; cursor: pointer; }
 /* ---------- MENU ---------- */
 #menu { position: fixed; inset: 0; pointer-events: none; }
 #menu > * { pointer-events: auto; }
-#title { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 40px; font-weight: 900; color: #fff;
-  letter-spacing: 3px; text-shadow: 0 3px 0 #1e3a8a, 0 6px 16px rgba(0,0,0,.5); }
-#carname { position: absolute; top: 62px; left: 50%; transform: translateX(-50%); font-size: 20px; font-weight: 800; color: #fff;
+#title { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: #fff; padding: 6px 18px 6px 14px; border-radius: 16px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.35), inset 0 -3px 0 #D0B46C; }
+#title img { height: 38px; display: block; }
+#title span { font-family: Poppins, "Arial Rounded MT Bold", Arial, sans-serif; font-size: 30px; font-weight: 800; color: #17283C; letter-spacing: 4px; line-height: 1; }
+#title em { font-style: normal; font-size: 26px; }
+#carname { position: absolute; top: 66px; left: 50%; transform: translateX(-50%); font-size: 20px; font-weight: 800; color: #fff;
   background: rgba(0,0,0,.4); padding: 4px 18px; border-radius: 20px; white-space: nowrap; }
 .arrow { position: absolute; top: 50%; transform: translateY(-50%); width: 72px; height: 110px; font-size: 64px; font-weight: 900; color: #fff;
   background: rgba(0,0,0,.35); border-radius: 18px; }
@@ -83,7 +86,7 @@ button { border: 0; outline: 0; font-family: inherit; cursor: pointer; }
 #loading { position: fixed; inset: 0; z-index: 40; background: #f8f6f0; display: flex; align-items: center; justify-content: center; }
 .loadcard { text-align: center; width: min(420px, 80vw); }
 .loadcard img { width: 70%; max-width: 300px; display: block; margin: 0 auto 10px; }
-.loadtitle { font-size: 34px; font-weight: 900; color: #17283C; letter-spacing: 4px; margin-bottom: 14px; }
+.loadtitle { font-family: Poppins, "Arial Rounded MT Bold", Arial, sans-serif; font-size: 34px; font-weight: 800; color: #17283C; letter-spacing: 6px; margin-bottom: 14px; }
 #loadbar { height: 10px; border-radius: 5px; background: rgba(23,40,60,.12); overflow: hidden; }
 #loadfill { height: 100%; width: 0%; background: linear-gradient(90deg, #D0B46C, #846839); transition: width .2s; }
 #loadtxt { margin-top: 10px; color: rgba(23,40,60,.6); font-size: 14px; font-weight: 700; }
@@ -91,7 +94,6 @@ button { border: 0; outline: 0; font-family: inherit; cursor: pointer; }
   background: rgba(255,255,255,.9); padding: 4px 12px; border-radius: 14px; }
 #brandline img { height: 22px; }
 #brandline span { font-size: 11px; font-weight: 800; color: #846839; letter-spacing: 1px; text-transform: uppercase; }
-#title { text-shadow: 0 3px 0 #17283C, 0 6px 16px rgba(0,0,0,.5); }
 
 /* ---------- damage ---------- */
 #dmgbar { position: absolute; top: 14px; left: 14px; display: flex; align-items: center; gap: 8px; }

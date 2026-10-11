@@ -371,6 +371,18 @@ export class OsmWorld {
             if (this.nearest(lx, lz, { exclude: ri }).d < 4) continue;
             lampsAt.push({ x: lx, z: lz, h: Math.atan2(-ux, -uz) + (side === 1 ? Math.PI / 2 : -Math.PI / 2) }); nl++;
             obstacles.push({ type: 'circle', x: lx, z: lz, r: 0.2 });
+            // a Glyde-X billboard every ~5th lamp, set back behind the pavement, angled at the oncoming traffic
+            if (seq % 5 === 2) {
+              const bx = px + rx * side * (r.w / 2 + 6.5), bz = pz + rz * side * (r.w / 2 + 6.5);
+              if (this.nearest(bx, bz, { exclude: ri }).d > 7 && !this.nearBuilding(bx, bz, 12) && !this.gbNear(bx, bz, 9)) {
+                const M = this.M; const bb = new THREE.Group(); const mat = M.billboards[(ri + seq) % M.billboards.length];
+                const panel = new THREE.Mesh(M.bbPanelGeo, [M.rail, M.rail, M.rail, M.rail, mat, mat]); panel.position.set(0, 7.5, 0); panel.userData.shared = true; bb.add(panel);
+                for (const dx of [-3.5, 3.5]) { const post = new THREE.Mesh(M.bbPostGeo, M.rail); post.position.set(dx, 2.25, 0); post.userData.shared = true; bb.add(post); }
+                bb.position.set(bx, 0, bz); bb.rotation.y = Math.atan2(-ux, -uz) - side * 0.5; g.add(bb);
+                const c = Math.cos(bb.rotation.y), sn = Math.sin(bb.rotation.y);
+                for (const dx of [-3.5, 3.5]) obstacles.push({ type: 'circle', x: bx + dx * c, z: bz - dx * sn, r: 0.3 });
+              }
+            }
             if (seq % 3 === 0) { const tx3 = px + rx * -side * (r.w / 2 + 1.4), tz3 = pz + rz * -side * (r.w / 2 + 1.4); if (this.nearest(tx3, tz3, { exclude: ri }).d > 4 && !this.nearBuilding(tx3, tz3, 9)) { (hash(ri, seq, 61) < 0.5 ? palms : jacs).push({ x: tx3, z: tz3, scale: 0.9 + hash(ri, seq, 63) * 0.4, rot: hash(ri, seq, 67) * 6.28 }); obstacles.push({ type: 'circle', x: tx3, z: tz3, r: 0.45 }); } }
           }
           acc -= L;
@@ -379,7 +391,8 @@ export class OsmWorld {
       if (nl) {
         const M = this.M; const lamps = new THREE.InstancedMesh(M.lampGeo, M.lamp, nl), glows = new THREE.InstancedMesh(M.lampGlowGeo, M.lampGlow, nl), pools = new THREE.InstancedMesh(M.poolGeo, M.pool, nl);
         lampsAt.forEach((l, k) => { _p.set(l.x, 0, l.z); _e.set(0, l.h, 0); _q.setFromEuler(_e); _s.set(1, 1, 1); _m.compose(_p, _q, _s); lamps.setMatrixAt(k, _m); glows.setMatrixAt(k, _m); pools.setMatrixAt(k, _m); });
-        lamps.castShadow = true; pools.renderOrder = 2; for (const im of [lamps, glows, pools]) { im.userData.shared = true; im.frustumCulled = false; g.add(im); }
+        const banners = new THREE.InstancedMesh(M.bannerGeo, M.banner, nl); for (let i = 0; i < nl; i++) { lamps.getMatrixAt(i, _m); banners.setMatrixAt(i, _m); }
+        lamps.castShadow = true; pools.renderOrder = 2; for (const im of [lamps, glows, pools, banners]) { im.userData.shared = true; im.frustumCulled = false; g.add(im); }
       }
     }
     // street furniture: traffic lights, stop signs, speed humps, crossings, street-name signs
@@ -567,6 +580,13 @@ export class OsmWorld {
       if (e) { const can = new THREE.Mesh(new THREE.BoxGeometry(Math.min(16, e.L * 0.5), 0.5, 5), this.mat.navy); can.position.set(e.mx + e.nx * 2.5, 4.2, e.mz + e.nz * 2.5); can.rotation.y = Math.atan2(e.nx, e.nz); can.castShadow = true; g.add(can);
         for (const sx of [-1, 1]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 4, 8), this.mat.pole); const px = e.mx + e.nx * 4.6 + -e.nz * sx * Math.min(7, e.L * 0.22), pz = e.mz + e.nz * 4.6 + e.nx * sx * Math.min(7, e.L * 0.22); post.position.set(px, 2, pz); g.add(post); } }
       const plant = new THREE.Mesh(new THREE.BoxGeometry(Math.max(4, span * 0.25), 2, Math.max(4, span * 0.25)), this.mat.roofFlat); plant.position.set(c[0], h + 1, c[1]); g.add(plant);
+    }
+    // Glyde-X rooftop board on malls and big flat-roofed buildings
+    if ((isMall || isShop || isFlats || isInstit) && area > 500 && hash(c[0] | 0, c[1] | 0, 21) < 0.6) {
+      const nr = this.nearest(c[0], c[1]); const e = this.roadEdge(b, nr);
+      if (e) { const M = this.M; const sc = Math.min(1, e.L / 14); const sg = new THREE.Mesh(M.bbPanelGeo, [M.rail, M.rail, M.rail, M.rail, M.billboards[(b.c[0] | 0) % 6 < 0 ? 0 : Math.abs(b.c[0] | 0) % 6], M.rail]);
+        sg.scale.set(sc, 0.75, 1); sg.position.set(e.mx - e.nx * 2.5, h + 2.4, e.mz - e.nz * 2.5); sg.rotation.y = Math.atan2(e.nx, e.nz); sg.userData.shared = true; g.add(sg);
+        for (const dd of [-3, 3]) { const post = new THREE.Mesh(M.bbPostGeo, M.rail); post.scale.set(0.6, 0.55, 0.6); post.position.set(e.mx - e.nx * 2.5 + -e.nz * dd * sc, h + 1.2, e.mz - e.nz * 2.5 + e.nx * dd * sc); post.userData.shared = true; g.add(post); } }
     }
     // name board on the roof edge nearest the road
     if (b.name && !/^(yes|house|residential)$/i.test(b.name)) {

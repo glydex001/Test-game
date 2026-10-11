@@ -7,16 +7,18 @@
 // Output: ../models/out/<id>.glb (player quality) and <id>_lo.glb (traffic quality)
 import { NodeIO, Node, Primitive, Accessor, getBounds } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, EXTMeshoptCompression } from '@gltf-transform/extensions';
-import { flatten, transformMesh, dedup, prune, weld, simplify, textureCompress, meshopt, draco, unpartition, dequantize, cloneDocument, normals } from '@gltf-transform/functions';
+import { flatten, transformMesh, dedup, prune, weld, simplify, textureCompress, meshopt, draco, unpartition, dequantize, cloneDocument, normals, joinPrimitives } from '@gltf-transform/functions';
 import { MeshoptEncoder, MeshoptSimplifier } from 'meshoptimizer';
 import draco3d from 'draco3dgltf';
+import { MeshoptDecoder } from 'meshoptimizer';
+await MeshoptDecoder.ready;
 import sharp from 'sharp';
 import { mat4, vec3 } from 'gl-matrix';
 import fs from 'fs';
 
 await MeshoptEncoder.ready; await MeshoptSimplifier.ready;
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({
-  'draco3d.decoder': await draco3d.createDecoderModule(), 'draco3d.encoder': await draco3d.createEncoderModule(),
+  'draco3d.decoder': await draco3d.createDecoderModule(), 'draco3d.encoder': await draco3d.createEncoderModule(), 'meshopt.decoder': MeshoptDecoder,
   'meshopt.encoder': MeshoptEncoder,
 });
 
@@ -29,6 +31,14 @@ export const CARS = [
   { id: 'valhalla', src: 'valhalla.glb', length: 4.7, yaw: 180, wheel: /^wheel (front|rear)/i, wheelMat: /^Wheel1A$/i, body: /^Paint$|^Coloured$/i, drop: /steering|control/i },
   { id: 'peugeot3008', src: 'peugeot_3008.glb', length: 4.45, yaw: 180, wheel: /^wheel\./i, body: /Material\.016$/i, drop: /steering/i },
   { id: 'tesla3', src: 'tesla.glb', length: 4.69, yaw: 0, wheel: /^(wheels|hub_[lr][bf])/i, wheelMat: /^hub_|^wheels\./i, body: /^primary(\.001)?$/i, drop: /steer/i },
+  // ---- the fast set (Sketchfab CC-BY, see README credits)
+  { id: 'bolide', loRatio: 0.045, src: 'bolide.glb', length: 4.76, yaw: 180, wheel: /wheel/i, wheelMat: /Wheel1A_3D/i, body: /Paint_Material|Coloured_Material/i, drop: /steering/i, hiRatio: 0.45 },
+  { id: 'ferrari599', loRatio: 0.02, src: 'ferrari599.glb', length: 4.71, yaw: 180, wheel: /^FERRARI- Wheel|^tire[FR][LR]/i, body: /^Body\.002$/i, drop: /steering|SteeringWheel/i, hiRatio: 0.25 },
+  { id: 'gt40', loRatio: 0.08, src: 'gt40.glb', length: 4.18, yaw: 180, wheelAuto: true, body: /Meshpart1Mtl|Ln1Mtl/i, drop: /steering/i, hiRatio: 0.6 },
+  { id: 'roadster', loRatio: 0.025, src: 'roadster.glb', length: 4.60, yaw: 180, wheel: /Wheel\.(Ft|Bk)\.[LR]/i, body: /^car_main_paint$/i, drop: /steering/i, hiRatio: 0.3 },
+  { id: 'challenger', loRatio: 0.08, src: 'challenger.glb', length: 5.03, yaw: 180, wheel: /Wheel1A_3D|3DWheel/i, wheelMat: /Wheel1A_3D/i, body: /Paint_Material1$|Coloured_Material1$/i, drop: /steering/i, hiRatio: 0.7 },
+  { id: 'gtr', loRatio: 0.027, src: 'gtr.glb', length: 4.71, yaw: 180, wheelAuto: true, body: /^CarPaint$/i, drop: /steering/i, hiRatio: 0.3 },
+  { id: 'lancia037', loRatio: 0.18, src: 'lancia037.glb', length: 3.92, yaw: 180, wheelAuto: true, body: /Meshpart1Mtl/i, drop: /steering|Iphone/i, hiRatio: 1 },
 ];
 
 const V = (x, y, z) => vec3.fromValues(x, y, z);
@@ -165,10 +175,13 @@ async function prep(cfg) {
   const doc = await io.read(`../models/raw/${cfg.src}`);
   const root = doc.getRoot();
   await doc.transform(dequantize(), unpartition());
+  // remember each mesh node's ancestor names (groups like "Wheel.Ft.R") before the hierarchy is flattened
+  const anc = new Map();
+  for (const node of root.listNodes()) { const names = []; let n = node; while (n) { names.push(n.getName() || ''); n = n.getParentNode ? n.getParentNode() : null; } anc.set(node, names); }
   bakeTransforms(doc);
 
   // drop unwanted nodes (steering wheel etc.)
-  for (const node of root.listNodes()) if (cfg.drop && cfg.drop.test(node.getName() || '')) { node.setMesh(null); node.dispose(); }
+  for (const node of root.listNodes()) if (cfg.drop && (anc.get(node) || [node.getName() || '']).some((nm) => cfg.drop.test(nm))) { node.setMesh(null); node.dispose(); }
 
   // ---- orient: long axis -> Z
   let b = sceneBounds(doc);
@@ -194,13 +207,29 @@ async function prep(cfg) {
   const corners = { FL: [], FR: [], RL: [], RR: [] };
   for (const node of root.listNodes()) {
     const mesh = node.getMesh(); if (!mesh) continue;
-    const byName = cfg.wheel && ancestorsMatch(node, cfg.wheel);
+    const byName = cfg.wheel && (anc.get(node) || [node.getName() || '']).some((nm) => cfg.wheel.test(nm));
     const prims = mesh.listPrimitives();
     const keep = [];
     for (const prim of prims) {
       const mat = prim.getMaterial(); const mname = mat ? mat.getName() : '';
       const byMat = cfg.wheelMat && cfg.wheelMat.test(mname);
-      if (!(byName || byMat)) { keep.push(prim); continue; }
+      let byGeo = false;
+      if (cfg.wheelAuto) {   // wheel-shaped: roughly round in y/z, thin in x, on the ground, out at the sides
+        const pb = primBounds(prim); const sy = pb.mx[1] - pb.mn[1], sz = pb.mx[2] - pb.mn[2], sx = pb.mx[0] - pb.mn[0]; const cxp = (pb.mn[0] + pb.mx[0]) / 2;
+        const single = Math.abs(sz - sy) < sy * 0.25 && sx < 0.5 && Math.abs(cxp) > size[0] * 0.3;          // one wheel
+        const pair = sx > size[0] * 0.6 && Math.abs(sz - sy) < sy * 0.25;                                    // an axle pair
+        const four = sx > size[0] * 0.6 && sz > size[2] * 0.45 && sz < size[2] * 0.95;                        // all four wheels in one mesh
+        const sidePair = sx < 0.5 && Math.abs(cxp) > size[0] * 0.3 && sz > size[2] * 0.45 && sz < size[2] * 0.95;   // front + rear on one side
+        byGeo = sy > 0.4 && sy < 0.9 && pb.mn[1] < 0.2 && (single || pair || four || sidePair);
+        if (byGeo && (pair || four)) {   // wheels sit at the sides: nothing of them near the centre line (seats and brake pairs do)
+          const pa = prim.getAttribute('POSITION').getArray(); let minAbs = Infinity; for (let i = 0; i < pa.length; i += 3) minAbs = Math.min(minAbs, Math.abs(pa[i]));
+          if (minAbs < size[0] * 0.28) byGeo = false;
+        }
+        if (byGeo && /seat|door|cover|step|mirror|belt/i.test(node.getName() + ' ' + mname)) byGeo = false;
+        if (process.env.DEBUG && byGeo) console.log('  auto-wheel', node.getName(), mname);
+        if (process.env.DEBUG === '2' && pb.mn[1] < 0.2 && sy > 0.3) console.log('  cand', node.getName(), mname, 'sx', sx.toFixed(2), 'sy', sy.toFixed(2), 'sz', sz.toFixed(2), 'cx', cxp.toFixed(2), byGeo);
+      }
+      if (!(byName || byMat || byGeo)) { keep.push(prim); continue; }
       const pb = primBounds(prim);
       // only accept wheel-sized things near the ground
       if (pb.mn[1] > size[1] * 0.45 || (pb.mx[1] - pb.mn[1]) > size[1] * 0.75) { keep.push(prim); continue; }
@@ -245,6 +274,20 @@ async function prep(cfg) {
   }
   if (bodyMesh.listPrimitives().length) scene.addChild(doc.createNode('wheel_leftovers').setMesh(bodyMesh)); else bodyMesh.dispose();
 
+  // ---- join the body into one primitive per material (hundreds of draw calls -> a handful)
+  {
+    const byMat = new Map(); const bodyNodes = [];
+    for (const node of root.listNodes()) { const mesh = node.getMesh(); if (!mesh || /^wheel_(FL|FR|RL|RR)$/.test(node.getName())) continue; bodyNodes.push(node); for (const p of mesh.listPrimitives()) { const k = (p.getMaterial() ? p.getMaterial().getName() : '') + '|' + p.getMode() + '|' + p.listSemantics().sort().join(',') + '|' + (p.getIndices() ? 'i' : 'n'); if (!byMat.has(k)) byMat.set(k, []); byMat.get(k).push(p); } }
+    const joined = doc.createMesh('body');
+    for (const [, prims] of byMat) {
+      if (prims.length === 1) { joined.addPrimitive(prims[0]); continue; }
+      try { joined.addPrimitive(joinPrimitives(prims)); } catch (e) { for (const p of prims) joined.addPrimitive(p); }
+    }
+    for (const node of bodyNodes) { node.setMesh(null); node.dispose(); }
+    for (const mesh of root.listMeshes()) if (mesh !== joined && !mesh.listParents().some((p) => p instanceof Node)) mesh.dispose();
+    scene.addChild(doc.createNode('body').setMesh(joined));
+  }
+
   // ---- materials: name the body material so the game can recolour it
   let bodyFound = 0;
   for (const m of root.listMaterials()) if (cfg.body.test(m.getName() || '')) { m.setName('BODY_PAINT' + (bodyFound ? '_' + bodyFound : '')); bodyFound++; }
@@ -256,6 +299,7 @@ async function prep(cfg) {
     weld(),
   );
   const hi = cloneDocument(doc);
+  if (cfg.hiRatio && cfg.hiRatio < 1) await hi.transform(simplify({ simplifier: MeshoptSimplifier, ratio: cfg.hiRatio, error: 0.004, lockBorder: true }));
   await hi.transform(prune(), draco({ method: 'edgebreaker', quantizePosition: 14, quantizeNormal: 10, quantizeTexcoord: 12 }));
   await io.write(`../models/out/${cfg.id}.glb`, hi);
   const lo = cloneDocument(doc);
@@ -263,7 +307,7 @@ async function prep(cfg) {
     textureCompress({ encoder: sharp, targetFormat: 'webp', quality: 70, resize: [512, 512] }),
   );
   weldByPosition(lo, 0.003);
-  await lo.transform(simplify({ simplifier: MeshoptSimplifier, ratio: 0.12, error: 0.03, lockBorder: false }), prune(), draco({ method: 'edgebreaker', quantizePosition: 12, quantizeNormal: 8, quantizeTexcoord: 10 }));
+  await lo.transform(simplify({ simplifier: MeshoptSimplifier, ratio: cfg.loRatio || 0.12, error: cfg.loRatio ? 0.06 : 0.03, lockBorder: false }), prune(), draco({ method: 'edgebreaker', quantizePosition: 12, quantizeNormal: 8, quantizeTexcoord: 10 }));
   await io.write(`../models/out/${cfg.id}_lo.glb`, lo);
 
   const szHi = fs.statSync(`../models/out/${cfg.id}.glb`).size, szLo = fs.statSync(`../models/out/${cfg.id}_lo.glb`).size;

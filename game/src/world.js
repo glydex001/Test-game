@@ -61,7 +61,8 @@ export function createWorld(scene, renderer) {
   const asphalt = tex('asphalt'); asphalt.repeat.set(2, 1);
   const asphaltN = tex('asphalt_n', { srgb: false }); asphaltN.repeat.set(2, 1);
   const asphaltR = tex('asphalt_r', { srgb: false }); asphaltR.repeat.set(2, 1);
-  const bbTex = [tex('billboard1', { mirror: false }), tex('billboard2', { mirror: false })];
+  const bbTex = [1, 2, 3, 4, 5, 6].map((i) => tex('billboard' + i, { mirror: false }));
+  const bannerTex = tex('banner', { mirror: false });
   const signTex = tex('shopsign', { mirror: false });
   const M = {
     road: std({ map: asphalt, normalMap: asphaltN, normalScale: new THREE.Vector2(0.45, 0.45), roughnessMap: asphaltR, roughness: 1.0, metalness: 0.0, envMapIntensity: 0.6 }),
@@ -76,6 +77,8 @@ export function createWorld(scene, renderer) {
     gantryPostGeo: new THREE.BoxGeometry(0.5, 7.5, 0.5), gantryBeamGeo: new THREE.BoxGeometry(ROAD_W + 3, 0.5, 0.5), gantrySignGeo: new THREE.BoxGeometry(12, 3, 0.2),
     lamp: std({ color: 0x9aa0a6, roughness: 0.4, metalness: 0.8 }),
     lampGlow: std({ color: 0xfff2c0, emissive: 0xffe0a0, emissiveIntensity: 0 }),
+    banner: std({ map: bannerTex, emissiveMap: bannerTex, emissive: 0xffffff, emissiveIntensity: 0, side: THREE.DoubleSide, roughness: 0.8 }),
+    bannerGeo: (() => { const g = new THREE.PlaneGeometry(0.7, 2.1); g.translate(0.65, 4.4, 0); return g; })(),   // hangs off the lamp pole on the arm side
     pool: new THREE.MeshBasicMaterial({ color: 0xffd58a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }),
   };
   { M.poolGeo = new THREE.CircleGeometry(5.5, 20); M.poolGeo.rotateX(-Math.PI / 2); M.poolGeo.translate(2.0, 0.06, 0); }
@@ -229,6 +232,7 @@ export function createWorld(scene, renderer) {
     M.road.roughness = rain ? 0.3 : 1.0; M.road.envMapIntensity = rain ? 1.6 : 0.6; M.road.color.setHex(rain ? 0x8a8a8a : 0xffffff);
     M.pool.opacity = night ? 0.5 : 0; W.rain = rain;
     for (const m of M.billboards) m.emissiveIntensity = night ? 0.9 : 0;
+    M.banner.emissiveIntensity = night ? 0.6 : 0;
     M.sign.emissiveIntensity = night ? 0.9 : 0;
     fMats.forEach((m) => { m.emissiveIntensity = night ? 0.55 : 0; m.emissive.setHex(night ? 0xffe3b0 : 0xffffff); });
     M.lampGlow.emissiveIntensity = night ? 5 : 0;

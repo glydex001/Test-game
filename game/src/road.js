@@ -224,16 +224,20 @@ export class ProceduralRoad {
       const s = rand(s0 + 12, s1 - 30); const lane = LANES[Math.floor(rand(0, 3))];
       for (let k = 0; k < 5; k++) { const p = this.pointAt(s + k * 5); addStar(p.x + p.rx * lane, p.z + p.rz * lane, 'c' + ci); }
     }
-    // billboard (one per chunk) + gantry every 3rd chunk
+    // Glyde-X billboards: three per chunk (alternating sides, different designs) + a gantry sign every 2nd chunk
     {
-      const s = rand(s0 + 20, s1 - 20); const side = ci % 2 === 0 ? -1 : 1; const p = this.pointAt(s);
-      const bb = new THREE.Group(); const mat = M.billboards[ci % M.billboards.length];
-      const panel = new THREE.Mesh(M.bbPanelGeo, [M.rail, M.rail, M.rail, M.rail, mat, M.rail]); panel.position.set(0, 7.5, 0); panel.userData.shared = true; bb.add(panel);
-      for (const dx of [-3.5, 3.5]) { const post = new THREE.Mesh(M.bbPostGeo, M.rail); post.position.set(dx, 2.25, 0); post.userData.shared = true; bb.add(post); }
-      bb.position.set(p.x + p.rx * side * 19, 0, p.z + p.rz * side * 19); bb.rotation.y = p.h - side * 0.55; g.add(bb);
-      const c = Math.cos(bb.rotation.y), sn = Math.sin(bb.rotation.y);
-      for (const dx of [-3.5, 3.5]) obstacles.push({ type: 'circle', x: bb.position.x + dx * c, z: bb.position.z - dx * sn, r: 0.3 });
-      if (ci % 3 === 1) {
+      const slots = [[s0 + 20, s0 + 90], [s0 + 100, s0 + 170], [s0 + 180, s1 - 20]];
+      slots.forEach((rng, k) => {
+        const s = rand(rng[0], rng[1]); const side = (ci + k) % 2 === 0 ? -1 : 1; const p = this.pointAt(s);
+        const bb = new THREE.Group(); const mat = M.billboards[(ci * 3 + k) % M.billboards.length];
+        const panel = new THREE.Mesh(M.bbPanelGeo, [M.rail, M.rail, M.rail, M.rail, mat, M.rail]); panel.position.set(0, 7.5, 0); panel.userData.shared = true; bb.add(panel);
+        for (const dx of [-3.5, 3.5]) { const post = new THREE.Mesh(M.bbPostGeo, M.rail); post.position.set(dx, 2.25, 0); post.userData.shared = true; bb.add(post); }
+        const dist = st.buildings ? ROAD_W / 2 + 2.2 : 19;
+        bb.position.set(p.x + p.rx * side * dist, 0, p.z + p.rz * side * dist); bb.rotation.y = p.h - side * (st.buildings ? 0.08 : 0.55); g.add(bb);
+        const c = Math.cos(bb.rotation.y), sn = Math.sin(bb.rotation.y);
+        for (const dx of [-3.5, 3.5]) obstacles.push({ type: 'circle', x: bb.position.x + dx * c, z: bb.position.z - dx * sn, r: 0.3 });
+      });
+      if (ci % 2 === 1) {
         const gs = (s0 + s1) / 2; const gp = this.pointAt(gs); const ga = new THREE.Group();
         for (const sx of [-1, 1]) { const post = new THREE.Mesh(M.gantryPostGeo, M.rail); post.position.set(sx * (ROAD_W / 2 + 1.2), 3.75, 0); post.userData.shared = true; ga.add(post); obstacles.push({ type: 'circle', x: gp.x + gp.rx * sx * (ROAD_W / 2 + 1.2), z: gp.z + gp.rz * sx * (ROAD_W / 2 + 1.2), r: 0.4 }); }
         const beam = new THREE.Mesh(M.gantryBeamGeo, M.rail); beam.position.set(0, 7.5, 0); beam.userData.shared = true; ga.add(beam);
@@ -250,6 +254,11 @@ export class ProceduralRoad {
           const b = st.makeBuilding(showroom); const p = this.pointAt(s + b.d / 2);
           const off = side * (ROAD_W / 2 + 4.5 + b.w / 2 + b.gap);
           b.group.position.set(p.x + p.rx * off, 0, p.z + p.rz * off); b.group.rotation.y = p.h + (showroom ? (side === -1 ? -Math.PI / 2 : Math.PI / 2) : 0);
+          if (!showroom && n % 3 === 0) {   // rooftop Glyde-X sign facing the road
+            const sg = new THREE.Mesh(M.bbPanelGeo, [M.rail, M.rail, M.rail, M.rail, M.billboards[n % M.billboards.length], M.billboards[(n + 1) % M.billboards.length]]);
+            const sc = Math.min(1, b.d / 13); sg.scale.set(sc, 0.7, 1); sg.position.set(side === -1 ? b.w / 2 - 0.3 : -b.w / 2 + 0.3, b.h + 2.3, 0); sg.rotation.y = side === -1 ? Math.PI / 2 : -Math.PI / 2; sg.userData.shared = true; b.group.add(sg);
+            for (const dz of [-3, 3]) { const post = new THREE.Mesh(M.bbPostGeo, M.rail); post.scale.set(0.6, 0.5, 0.6); post.position.set(sg.position.x, b.h + 1.1, dz * sc); post.userData.shared = true; b.group.add(post); }
+          }
           g.add(b.group);
           const hw = showroom ? b.d / 2 : b.w / 2, hl = showroom ? b.w / 2 : b.d / 2;
           obstacles.push({ type: 'box', x: b.group.position.x, z: b.group.position.z, hw, hl, h: b.group.rotation.y });
@@ -263,7 +272,8 @@ export class ProceduralRoad {
         placeInstance(lamps, k, x, 0, z, p.h + (sx === 1 ? Math.PI : 0), 1); placeInstance(glows, k, x, 0, z, p.h + (sx === 1 ? Math.PI : 0), 1); placeInstance(pools, k, x, 0, z, p.h + (sx === 1 ? Math.PI : 0), 1); k++;
         obstacles.push({ type: 'circle', x, z, r: 0.2 });
       }
-      lamps.count = k; glows.count = k; pools.count = k; pools.renderOrder = 2; g.add(lamps, glows, pools);
+      const banners = new THREE.InstancedMesh(M.bannerGeo, M.banner, nl); for (let i = 0; i < k; i++) { lamps.getMatrixAt(i, _m); banners.setMatrixAt(i, _m); } banners.count = k; banners.frustumCulled = false;
+      lamps.count = k; glows.count = k; pools.count = k; pools.renderOrder = 2; g.add(lamps, glows, pools, banners);
     }
     this.group.add(g);
     return { ci, i0, i1, group: g, obstacles };

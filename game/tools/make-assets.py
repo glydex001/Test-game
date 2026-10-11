@@ -78,6 +78,42 @@ def billboard(photo_name, headline, sub, out):
 
 billboard('recliner1', 'Comfort\nIn Motion', 'Factory direct  •  083 378 7864', f'{OUT}/billboard1.webp')
 billboard('recliner2', 'Premium\nRecliners', 'Nationwide delivery', f'{OUT}/billboard2.webp')
+billboard('recliner1', 'Largest Recliner\nRange in SA', 'Showroom  •  Eikenhof, JHB South', f'{OUT}/billboard3.webp')
+billboard('recliner2', 'Factory\nDirect', 'glydexrecliners  •  083 378 7864', f'{OUT}/billboard4.webp')
+
+# navy variants: dark board, white logo panel, gold headline (billboard5/6)
+def billboard_dark(headline, sub, out, photo_name=None):
+    W, H = 1536, 768
+    bb = Image.new('RGB', (W, H), NAVY)
+    if photo_name and os.path.exists(f'{RAW}/{photo_name}.png'):
+        p = fit(Image.open(f'{RAW}/{photo_name}.png').convert('RGB'), 760, H); bb.paste(p, (W - 760, 0))
+        fade = Image.new('L', (760, H), 0); fd = ImageDraw.Draw(fade)
+        for x in range(200): fd.line((x, 0, x, H), fill=int(255 * (1 - x / 200)))
+        bb.paste(Image.new('RGB', (760, H), NAVY), (W - 760, 0), fade)
+    d = ImageDraw.Draw(bb)
+    d.rounded_rectangle((60, 60, 640, 300), radius=24, fill='white')
+    lg = logo_rgba.copy(); lg.thumbnail((520, 200)); bb.paste(lg, (60 + (580 - lg.width) // 2, 60 + (240 - lg.height) // 2), lg)
+    f1 = ImageFont.truetype(POPPINS, 68); f2 = ImageFont.truetype(POPPINS, 34)
+    y = 360
+    for line in headline.split('\n'):
+        d.text((70, y), line, font=f1, fill=GOLD); y += 80
+    d.rectangle((70, y + 10, 420, y + 14), fill=GOLD)
+    d.text((70, y + 34), sub, font=f2, fill=(255, 255, 255))
+    bb.save(out, quality=85); print('billboard', out)
+billboard_dark('Comfort\nIn Motion', 'Premium motion recliners', f'{OUT}/billboard5.webp', 'recliner1')
+billboard_dark('Glyde-X\nRacing', 'Drive. Collect. Deliver.', f'{OUT}/billboard6.webp', 'recliner2')
+
+# lamp-post banner (tall), both sides the same
+Wb, Hb = 512, 1536
+ban = Image.new('RGB', (Wb, Hb), NAVY); d = ImageDraw.Draw(ban)
+d.rectangle((0, 0, Wb, 26), fill=GOLD); d.rectangle((0, Hb - 26, Wb, Hb), fill=GOLD)
+d.rounded_rectangle((40, 80, Wb - 40, 400), radius=20, fill='white')
+lg = logo_rgba.copy(); lg.thumbnail((Wb - 120, 280)); ban.paste(lg, ((Wb - lg.width) // 2, 80 + (320 - lg.height) // 2), lg)
+fb = ImageFont.truetype(POPPINS, 92)
+for i, word in enumerate(['COMFORT', 'IN', 'MOTION']):
+    w = d.textlength(word, font=fb); d.text(((Wb - w) // 2, 560 + i * 140), word, font=fb, fill=GOLD if word != 'IN' else (255, 255, 255))
+fs = ImageFont.truetype(POPPINS, 44); t = 'glydexrecliners'; w = d.textlength(t, font=fs); d.text(((Wb - w) // 2, Hb - 160), t, font=fs, fill=(255, 255, 255))
+ban.save(f'{OUT}/banner.webp', quality=85); print('banner')
 
 # ---------- shop front: a Glyde-X showroom sign band to sit above the shop-front texture
 W, H = 1024, 256

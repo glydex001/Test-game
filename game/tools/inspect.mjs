@@ -3,8 +3,10 @@ import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { getBounds } from '@gltf-transform/core';
 import sharp from 'sharp';
 import draco3d from 'draco3dgltf';
+import { MeshoptDecoder } from 'meshoptimizer';
+await MeshoptDecoder.ready;
 
-const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ 'draco3d.decoder': await draco3d.createDecoderModule(), 'draco3d.encoder': await draco3d.createEncoderModule() });
+const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ 'draco3d.decoder': await draco3d.createDecoderModule(), 'draco3d.encoder': await draco3d.createEncoderModule(), 'meshopt.decoder': MeshoptDecoder });
 for (const f of process.argv.slice(2)) {
   const doc = await io.read(f);
   const root = doc.getRoot();

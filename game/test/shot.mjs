@@ -5,7 +5,7 @@ import http from 'http'; import fs from 'fs'; import path from 'path';
 const root = path.resolve('www');
 const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.glb': 'model/gltf-binary', '.wasm': 'application/wasm', '.webp': 'image/webp', '.json': 'application/json' };
 const server = http.createServer((req, res) => {
-  const f = path.join(root, decodeURIComponent(req.url === '/' ? 'index.html' : req.url.split('?')[0]));
+  const u = req.url.split('?')[0]; const f = path.join(root, decodeURIComponent(u === '/' ? 'index.html' : u));
   if (!fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); res.end(); return; }
   res.writeHead(200, { 'content-type': types[path.extname(f)] || 'application/octet-stream' });
   fs.createReadStream(f).pipe(res);

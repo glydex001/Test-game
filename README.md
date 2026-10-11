@@ -1,4 +1,4 @@
-# Kid Cars
+# Glyde-X Racing 🏁
 
 An endless-driving game for Android, made for a 5-year-old. Real car models, real-looking roads and
 scenery, no music, no people, no violence — bumps just slow you down. Everything is unlocked from the start.
@@ -8,16 +8,16 @@ Presented by **Glyde-X Recliners — Comfort in Motion**.
 ## Getting the app
 
 Every push to `main` builds a signed APK automatically (see **Actions** / **Releases**).
-Download the newest `KidCars-v1.N.apk` from the Releases page onto the phone and open it.
+Download the newest `GlydeXRacing-v1.N.apk` from the Releases page onto the phone and open it.
 
 ## Playing
 
 - Landscape only. Steering wheel (drag to turn, springs back), **GO** and **STOP** pedals, 📣 horn, ⚡ boost, 🎥 changes camera,
-  📸 takes a photo (saved to the phone's Pictures/Kid Cars album). The garage has a 🎡/🕹️ switch to use big ◀ ▶ buttons instead of the wheel.
+  📸 takes a photo (saved to the phone's Pictures/Glyde-X Racing album). The garage has a 🎡/🕹️ switch to use big ◀ ▶ buttons instead of the wheel.
 - Things to do: ⭐ stars to collect along the road, and missions (collect stars, reach a speed, pass cars, drive to a
   place in Lenasia, deliver a Glyde-X recliner from the showroom to a customer's street). Stars and missions earn
   stickers in the 📒 sticker book. Progress is saved on the phone.
-- Garage: swipe through the seven cars with ‹ ›, pick a colour, pick a world (country / desert / city / snow / **Lenasia**)
+- Garage: swipe through the fourteen cars with ‹ ›, pick a colour, pick a world (country / desert / city / snow / **Lenasia**)
   and weather (day / sunset / night / rain), toggle traffic, sound, tilt-to-steer and 🔋 eco mode (30 fps, cooler phone;
   ✨ turns the full graphics back on).
 - ❚❚ pauses (also the phone's back button); switching apps pauses automatically.
@@ -47,6 +47,9 @@ Car models (CC-BY / MIT, used with attribution):
 - Porsche 911 930 Turbo — github.com/UtkarshPathrabe (MIT)
 - Aston Martin Valhalla — github.com/Rabby567/3D_Car_Website
 - Tesla Model 3 — "Tesla 2018 Model 3" by Ameer Studio on Sketchfab (CC-BY)
+- Bugatti Bolide 2024, Ford GT40 Mark II, Tesla Roadster 2020, Dodge Challenger RT, Lancia 037 Stradale — vecarz on Sketchfab (CC-BY 4.0)
+- Ferrari 599 GTO — Black Snow on Sketchfab (CC-BY 4.0)
+- Nissan GT-R R35 — Ciasny on Sketchfab (CC-BY 4.0)
 
 Textures and backdrops generated with Higgsfield. Built with three.js.
 Lenasia street furniture (traffic lights, stop signs, humps, street names) and suburb boundaries come from OpenStreetMap tags.
