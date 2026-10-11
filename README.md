@@ -49,4 +49,5 @@ Car models (CC-BY / MIT, used with attribution):
 - Tesla Model 3 — "Tesla 2018 Model 3" by Ameer Studio on Sketchfab (CC-BY)
 
 Textures and backdrops generated with Higgsfield. Built with three.js.
+Lenasia street furniture (traffic lights, stop signs, humps, street names) and suburb boundaries come from OpenStreetMap tags.
 Map data © OpenStreetMap contributors, ODbL.

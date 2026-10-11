@@ -517,7 +517,9 @@ function update(dt) {
     if (!isMap) { G.idx = near.i; G.s = near.s; }
     const absd = Math.abs(near.d);
     body.offRoad = isMap ? !near.onRoad : absd > ROAD_W / 2 + 0.6; body.surfaceGrip = (body.offRoad ? W.current.offroadGrip : 1) * (W.rain ? 0.7 : 1);
-    if (isMap) streetEl.textContent = near.onRoad && near.name ? near.name : '';
+    if (isMap) { if ((G.frameN = (G.frameN || 0) + 1) % 20 === 0) G.suburb = W.road.suburbAt(body.x, body.z); const nm = near.onRoad && near.name ? near.name : ''; const txt = nm + (G.suburb ? (nm ? ' · ' : '') + G.suburb : ''); if (txt !== streetEl.textContent) streetEl.textContent = txt; }
+    // speed humps: a thump and a bounce when you cross one too fast
+    if (isMap) { const hp = W.road.humpAt(body.x, body.z); if (hp && hp !== G.lastHump) { G.lastHump = hp; const v = Math.abs(body.vf); if (v > 4) { S.heave.v += Math.min(1.6, v * 0.09); S.pitch.v -= Math.min(0.5, v * 0.02); Sound.bump(Math.min(0.6, v / 30)); vib(Math.min(60, v * 2)); if (v > 12) { body.vx *= 0.93; body.vz *= 0.93; } } } else if (!hp) G.lastHump = null; }
     // a damaged car wanders and loses power
     const dmgF = G.damage / 100;
     if (dmgF > 0.5 && !G.totaled) { body.steer += Math.sin(clock.elapsedTime * 7) * (dmgF - 0.5) * 0.5; }
@@ -642,7 +644,7 @@ function update(dt) {
     G.saveT += dt; if (G.saveT > 10) { G.saveT = 0; saveP(); for (const s of newStickers()) { toast('NEW STICKER!', `${s.e} ${s.n}`); Sound.fanfare(); } }
 
     // ---- world upkeep
-    if (isMap) { W.road.ensure(body.x, body.z); drawMiniMap(); } else W.road.ensure(G.idx);
+    if (isMap) { W.road.ensure(body.x, body.z); drawMiniMap(); if (W.road.tickLights && (G.frameN % 10 === 0)) W.road.tickLights(physTime, body.x, body.z); } else W.road.ensure(G.idx);
     W.follow(body.x, body.z, fx, fz);
     speedEl.textContent = Math.round(Math.abs(body.vf) * 3.6);
     distEl.textContent = (G.dist / 1000).toFixed(1) + ' km';
@@ -732,7 +734,7 @@ applyLock();
 window.__kidcars = { G, P, settings, missions, state: () => state, hasCar, body: () => body, simTime: () => physTime, roadReady: () => !!W.road, inputs: () => ({ ...input }), world: () => W, toast,
   // test hooks
   addStarAhead: (n) => { const [fx, fz] = body.fwd(); for (let k = 0; k < n; k++) addStar(body.x + fx * (8 + k * 4), body.z + fz * (8 + k * 4), 'test'); },
-  teleport: (x, z) => { body.x = x; body.z = z; body.vx = body.vz = 0; },
+  teleport: (x, z) => { body.x = x; body.z = z; body.vx = body.vz = 0; camera.position.set(x + Math.sin(body.h) * 8, 2.7, z + Math.cos(body.h) * 8); },
   lockDbg: () => ({ held: lockHeld, heldFor: lockHeld ? Math.round(performance.now() - lockT0) : 0, state, lock: settings.lock, touches: Array.from(touches.values()), log: lockLog.slice() }),
   // Android back button: pause while driving, garage while paused, exit from the garage
   back: () => { if (state === 'drive') { pauseGame(); return 'handled'; } if (state === 'pause') { toMenu(); return 'handled'; } if (!$('book').classList.contains('hidden')) { $('book').classList.add('hidden'); return 'handled'; } return 'exit'; } };

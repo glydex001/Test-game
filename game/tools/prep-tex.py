@@ -9,10 +9,14 @@ os.makedirs(OUT, exist_ok=True)
 TILES = {  # name: size
     'grass': 1024, 'sand': 1024, 'snow': 1024, 'pavement': 1024, 'asphalt': 1024,
     'facade_glass': 1024, 'facade_brick': 1024, 'facade_shops': 1024, 'house_front': 1024, 'precast_wall': 512, 'roof_tiles': 512,
+    # Lenasia set (value = (size, crop fractions l,t,r,b))
+    'house_brick': (1024, (0, 0.01, 1, 1)), 'house_arch': (1024, (0, 0.02, 1, 1)), 'house_modern': (1024, (0, 0.17, 1, 0.985)),
+    'mosque_wall': (1024, (0, 0.04, 1, 1)), 'mall_facade': (1024, (0, 0.12, 1, 0.93)), 'shops_row': (1024, (0, 0.02, 1, 0.86)), 'flats_block': (1024, (0, 0.08, 1, 0.95)),
 }
 CUTOUTS = {  # name: (max width, crop box or None, soft, hard)
     'tree_oak': (768, None, 18, 60), 'tree_pine': (768, (60, 60, -20, -1), 18, 60), 'tree_snowpine': (768, None, 30, 90), 'cactus': (640, None, 30, 90),
     'leaf_oak': (512, 'frac:0,0.06,1,1', 30, 90), 'leaf_pine': (512, None, 30, 90), 'grass_tuft': (512, None, 30, 90), 'clouds': (2048, None, 40, 120, True),
+    'palisade': (1024, None, 40, 120), 'tree_jacaranda': (768, None, 30, 90), 'tree_palm': (512, None, 30, 90),
     'hills_green': (2048, None, 30, 90, True), 'mesas_desert': (2048, 'frac:0,0.335,1,0.735', 30, 90, True), 'mountains_snow': (2048, None, 25, 80, True), 'skyline_city': (2048, None, 30, 90, True),
 }
 
@@ -37,7 +41,10 @@ def key(img, soft, hard, top_only=False, extra=None):
 for name, size in TILES.items():
     p = f'{RAW}/{name}.png'
     if not os.path.exists(p): print('missing', name); continue
-    im = Image.open(p).convert('RGB').resize((size, size), Image.LANCZOS)
+    im = Image.open(p).convert('RGB')
+    if isinstance(size, tuple):
+        size, (l, t, r, b) = size; im = im.crop((int(l * im.width), int(t * im.height), int(r * im.width), int(b * im.height)))
+    im = im.resize((size, int(size * im.height / im.width)) if im.width != im.height else (size, size), Image.LANCZOS)
     im.save(f'{OUT}/{name}.webp', quality=82)
     print('tile', name)
 

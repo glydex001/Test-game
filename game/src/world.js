@@ -161,11 +161,18 @@ export function createWorld(scene, renderer) {
   // Lenasia (map mode) materials
   const houseTex = tex('house_front', { mirror: true }); const wallTex = tex('precast_wall', { mirror: true }); const roofTex = tex('roof_tiles', { mirror: true });
   const fMatsHouse = std({ map: houseTex, roughness: 0.9, metalness: 0 });
+  // Lenasia facades (generated from reference descriptions of the suburb): keyed by style name
+  const fac = (name, rough = 0.85) => { const t = tex(name, { mirror: true }); return std({ map: t, emissiveMap: t, emissive: 0xffffff, emissiveIntensity: 0, roughness: rough, metalness: 0 }); };
+  const lenMats = { brick: fac('house_brick'), arch: fac('house_arch'), modern: fac('house_modern', 0.6), flats: fac('flats_block'), shops: fac('shops_row'), mall: fac('mall_facade', 0.6), mosque: fac('mosque_wall') };
+  const palisadeMat = std({ map: tex('palisade', { mirror: true }), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.6 });
+  const jacaranda = cutoutParts('tree_jacaranda', 9, 768 / 544, { sink: 0.1 });
+  const palm = cutoutParts('tree_palm', 11, 364 / 991);
   const wallMat = std({ map: wallTex, roughness: 1, metalness: 0 });
   const roofTileMat = std({ map: roofTex, roughness: 0.9, metalness: 0 }); roofTex.repeat.set(2, 2);
   W.worlds.lenasia = { ground: 'grass', tile: 7, groundTint: 0xb7ad78, shoulder: 'sand', shoulderTint: 0xffffff, backdrop: 'hills_green', backdropH: 38, map: 'lenasia.json',
     fog: { day: 0xd6dde6, sunset: 0xe9b48a, night: 0x0a0f1e }, fogFar: 520, offroadGrip: 0.55,
-    scatter: [], tex, fMats, fMatsHouse, wallMat, roofTileMat, makeBuilding, treeStyles: null, start: [-743, -2581], showroomAt: null };
+    scatter: [], tex, fMats, fMatsHouse, wallMat, roofTileMat, makeBuilding, treeStyles: null, start: [-743, -2581], showroomAt: null,
+    lenMats, palisadeMat, jacaranda, palm };
   for (const k in W.worlds) W.worlds[k].mats = M;
   W.worlds.lenasia.treeStyles = { oakTree, pineTree };
   W.mapData = {};
@@ -225,6 +232,7 @@ export function createWorld(scene, renderer) {
     fMats.forEach((m) => { m.emissiveIntensity = night ? 0.55 : 0; m.emissive.setHex(night ? 0xffe3b0 : 0xffffff); });
     M.lampGlow.emissiveIntensity = night ? 5 : 0;
     w.nightNow = night; if (W.road && W.road.signMats) for (const m of W.road.signMats) m.emissiveIntensity = night ? 0.8 : 0;
+    for (const k in lenMats) lenMats[k].emissiveIntensity = night ? 0.45 : 0;
     cloudMat.color.setHex(night ? 0x3a4260 : time === 'sunset' ? 0xffc9a0 : rain ? 0x6f7784 : 0xffffff); cloudMat.opacity = night ? 0.6 : rain ? 1 : 0.95;
     flareHolder.visible = !night && !rain;
     W.night = night;
