@@ -195,7 +195,8 @@ export function createWorld(scene, renderer) {
         W.road = ow; W.loading = false;
       };
       if (W.mapData[w.map]) make(W.mapData[w.map]);
-      else fetch(w.map).then((r) => r.json()).then((d) => { W.mapData[w.map] = d; if (W.current === w) make(d); });
+      else Promise.all([fetch(w.map).then((r) => r.json()), fetch(w.map.replace('.json', '-bld.json')).then((r) => (r.ok ? r.json() : null)).catch(() => null)])
+        .then(([d, gb]) => { if (gb) d.gb = gb; W.mapData[w.map] = d; if (W.current === w) make(d); });
     } else {
       W.road = new ProceduralRoad(scene, w);
     }

@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { buildTrees } from './road.js';
 import { addStar, removeStars } from './goals.js';
+import { CARS, hasCar, instantiate, disposeInstance } from './cars.js';
 
 const TILE = 400;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -58,6 +59,9 @@ export class OsmWorld {
     for (const row of this.data.treeRows) for (let i = 0; i < row.length - 1; i++) { const a = row[i], b = row[i + 1]; const l = Math.hypot(b[0] - a[0], b[1] - a[1]); for (let d = 0; d < l; d += 9) { const t = d / l; put(this.tileTrees, a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); } }
     this.data.pois.forEach((p) => put(this.tilePois, p.c[0], p.c[1], p));
     this.tileSigns = new Map(); this.signs.forEach((sg) => put(this.tileSigns, sg[0], sg[1], sg));
+    // satellite-derived building footprints (Google Open Buildings), if the extra file was loaded
+    this.tileGB = new Map(); this.gb = (this.data.gb && this.data.gb.b) || [];
+    this.gb.forEach((b, i) => { b.c = centroid(b.p); put(this.tileGB, b.c[0], b.c[1], i); });
     this.key = key;
   }
 
@@ -237,6 +241,7 @@ export class OsmWorld {
   disposeTile(t) {
     this.group.remove(t.group); removeStars('t' + t.tx + '_' + t.tz);
     this.tlHeads = this.tlHeads.filter((h) => h.tile !== this.key(t.tx, t.tz));
+    for (const m of (t.parked || [])) disposeInstance(m);
     t.group.traverse((o) => { if (o.isInstancedMesh) { o.dispose(); return; } if (o.geometry && !o.userData.shared) o.geometry.dispose(); });
     for (const ri of t.roads) { const rm = this.roadMeshes.get(ri); if (rm && --rm.refs <= 0) { this.group.remove(rm.mesh); rm.mesh.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); this.roadMeshes.delete(ri); } }
     for (const ai of t.areas) { const am = this.areaMeshes.get(ai); if (am && --am.refs <= 0) { this.group.remove(am.mesh); am.mesh.geometry.dispose(); this.areaMeshes.delete(ai); } }
@@ -254,12 +259,33 @@ export class OsmWorld {
     if (discs.length) { const geos = discs.map(([, p, w, y]) => { const c = new THREE.CircleGeometry(w / 2, 14); c.rotateX(-Math.PI / 2); c.translate(p[0], y + 0.002, p[1]); const uv = c.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / 7, uv.getY(i) * w / 7); return c; }); const dm = new THREE.Mesh(mergeGeos(geos), this.mat.road); dm.receiveShadow = true; g.add(dm); }
     // areas (parks, water, pitches, ...)
     for (const ai of (this.tileAreas.get(tk) || [])) { let am = this.areaMeshes.get(ai); if (!am) { const mesh = this.buildArea(ai); if (!mesh) continue; am = { refs: 0, mesh }; this.areaMeshes.set(ai, am); this.group.add(mesh); } am.refs++; }
+    // car parks: painted bays + a few parked cars
+    const parked = [];
+    for (const ai of (this.tileAreas.get(tk) || [])) {
+      const a = this.data.areas[ai]; if (a.k !== 'park_lot') continue; const c = centroid(a.p); if (c[0] < x0 || c[0] >= x0 + TILE || c[1] < z0 || c[1] >= z0 + TILE) continue;
+      const ob = obbOf(a.p); if (ob.hw < 8 || ob.hl < 6) continue;
+      const long = ob.hw >= ob.hl; const ux = Math.cos(ob.h) * (long ? 1 : 0) + -Math.sin(ob.h) * (long ? 0 : 1), uz = -Math.sin(ob.h) * (long ? 1 : 0) + -Math.cos(ob.h) * (long ? 0 : 1);   // along the long axis
+      const vx = -uz, vz = ux; const half = long ? ob.hw : ob.hl, halfS = long ? ob.hl : ob.hw;
+      const rows = Math.max(1, Math.min(4, Math.floor(halfS * 2 / 16))); const geos = []; let nCar = 0;
+      for (let r = 0; r < rows; r++) {
+        const off = -halfS + 8 + r * 16 - (rows > 1 ? 0 : (halfS - 8));
+        for (let d = -half + 3; d < half - 3; d += 2.6) {
+          const px = ob.x + ux * d + vx * off, pz = ob.z + uz * d + vz * off;
+          if (!pointInPoly(px, pz, a.p) || this.nearest(px, pz).d < 4) continue;
+          for (const sgn of [-1, 1]) { const line = new THREE.PlaneGeometry(0.12, 5); line.rotateX(-Math.PI / 2); line.rotateY(Math.atan2(vx, vz)); line.translate(px + vx * sgn * 2.6, 0.03, pz + vz * sgn * 2.6); geos.push(line); }
+          if (nCar < 6 && hash(px | 0, pz | 0, 8) < 0.22) { const sgn = hash(px | 0, pz | 0, 9) < 0.5 ? -1 : 1; const spec = CARS[Math.floor(hash(px | 0, pz | 0, 10) * CARS.length)]; if (hasCar(spec.id, true)) { const m = instantiate(spec.id, true, [0xd3121f, 0x1746c9, 0xf2f2f2, 0x15161a, 0x9aa0a6, 0x6d28d9][Math.floor(hash(px | 0, pz | 0, 11) * 6)]); m.position.set(px + vx * sgn * 2.6, 0, pz + vz * sgn * 2.6); m.rotation.y = Math.atan2(-vx * sgn, -vz * sgn); m.traverse((o) => { o.userData.shared = true; }); g.add(m); parked.push(m); nCar++; obstacles.push({ type: 'box', x: m.position.x, z: m.position.z, hw: spec.w / 2, hl: spec.len / 2, h: m.rotation.y }); } }
+        }
+      }
+      if (geos.length) { const bays = new THREE.Mesh(mergeGeos(geos), this.mat.stripe); g.add(bays); }
+    }
     // petrol stations
     for (const p of (this.tilePois.get(tk) || [])) if (p.k === 'fuel' && !this.nearBuilding(p.c[0], p.c[1], 6)) this.buildFuel(p, g, obstacles);
     // mapped buildings
     for (const bi of (this.tileBuildings.get(tk) || [])) { const b = this.data.buildings[bi]; const mesh = this.buildBuilding(b); if (!mesh) continue; g.add(mesh); const ob = obbOf(b.p); obstacles.push({ type: 'box', ...ob }); }
     // procedural houses along residential streets + street trees
     const houses = [], trees = [], jacs = [], palms = [];
+    const gbHere = this.tileGB.get(tk) || []; const useGB = gbHere.length > 0;
+    if (useGB) this.buildGB(gbHere, g, obstacles, houses);
     for (const ri of roads) {
       const r = this.roads[ri]; if (!/residential|unclassified|living_street/.test(r.t)) continue;
       const step = 21; let acc = 10, seq = 0;
@@ -271,6 +297,14 @@ export class OsmWorld {
           if (px < x0 || px >= x0 + TILE || pz < z0 || pz >= z0 + TILE) continue;
           for (const side of [-1, 1]) {
             const h1 = hash(ri, seq, side + 2); if (h1 < 0.18) continue;          // some empty plots
+            if (useGB) {   // real footprints exist: only add the boundary wall/fence where a building stands behind it
+              const bx = px + rx * side * (r.w / 2 + 10), bz = pz + rz * side * (r.w / 2 + 10);
+              if (!this.gbNear(bx, bz, 14)) continue;
+              const woff = r.w / 2 + 2.2; const wx = px + rx * side * woff, wz = pz + rz * side * woff; const gapAt = (hash(ri, seq, 23) - 0.5) * 8; const palisade = hash(ri, seq, 47) < 0.45;
+              for (const wo of [gapAt - 5.5, gapAt + 5.5]) { const cxw = wx + ux * wo, czw = wz + uz * wo; let clear = true; for (const e of [-3.75, 0, 3.75]) { const q = this.nearest(cxw + ux * e, czw + uz * e, { exclude: ri }); if (q.d < q.w / 2 + 2.5) { clear = false; break; } } if (!clear) continue; houses.push({ wall: true, palisade, x: cxw, z: czw, yaw: Math.atan2(-ux, -uz) + (side === 1 ? Math.PI : 0), len: 7.5 }); obstacles.push({ type: 'box', x: cxw, z: czw, hw: 0.15, hl: 3.75, h: Math.atan2(-ux, -uz) + (side === 1 ? Math.PI : 0) }); }
+              if (hash(ri, seq, 29) < 0.35) { const tx2 = px + rx * side * (r.w / 2 + 1.1) + ux * 6, tz2 = pz + rz * side * (r.w / 2 + 1.1) + uz * 6; if (this.nearest(tx2, tz2, { exclude: ri }).d > 3) { (hash(ri, seq, 53) < 0.5 ? jacs : trees).push({ x: tx2, z: tz2, scale: 0.6 + hash(ri, seq, 31) * 0.5, rot: hash(ri, seq, 37) * 6.28 }); obstacles.push({ type: 'circle', x: tx2, z: tz2, r: 0.4 }); } }
+              continue;
+            }
             const setback = r.w / 2 + 8.5 + hash(ri, seq, side + 7) * 3;
             const hx = px + rx * side * setback, hz = pz + rz * side * setback;
             // don't build on another road or on a mapped building
@@ -382,7 +416,44 @@ export class OsmWorld {
       obstacles.push({ type: 'box', x: sx, z: sz, hw: b.w / 2, hl: b.d / 2, h: syaw });
     }
     this.group.add(g);
-    return { tx, tz, group: g, obstacles, roads, areas: this.tileAreas.get(tk) || [], humps: furn.humps };
+    return { tx, tz, group: g, obstacles, roads, areas: this.tileAreas.get(tk) || [], humps: furn.humps, parked };
+  }
+  gbNear(x, z, dist) {
+    const tx = Math.floor(x / TILE), tz = Math.floor(z / TILE);
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const i of (this.tileGB.get(this.key(tx + dx, tz + dz)) || [])) { const c = this.gb[i].c; if (Math.hypot(c[0] - x, c[1] - z) < dist) return true; }
+    return false;
+  }
+  // real building footprints: small ones become instanced boxes (fast), big ones are extruded
+  buildGB(list, g, obstacles, houses) {
+    const LM = this.style.lenMats; const styles = { arch: [], brick: [], modern: [], flats: [] }; const roofsP = []; const flatCaps = [];
+    for (const i of list) {
+      const b = this.gb[i]; const c = b.c;
+      if (this.nearBuilding(c[0], c[1], 9)) continue;                       // OSM already has this one
+      const nr = this.nearest(c[0], c[1]); if (nr.d < nr.w / 2 + 2.5) continue;   // sits on a road (bad detection)
+      const ob = obbOf(b.p); const area = b.a; const hs = hash(c[0] | 0, c[1] | 0, 3);
+      let style, h, flat = false;
+      if (area > 450) { style = 'flats'; h = area > 1200 ? 8 : 6.6; flat = true; }
+      else if (area < 70) { style = hs < 0.6 ? 'arch' : 'modern'; h = 3.2; flat = hs > 0.6; }
+      else { style = hs < 0.35 ? 'arch' : hs < 0.72 ? 'brick' : 'modern'; const two = area > 150 ? hash(c[0] | 0, c[1] | 0, 4) < 0.6 : hash(c[0] | 0, c[1] | 0, 4) < 0.25; h = two ? 6.3 : 3.4; flat = style === 'modern'; }
+      if (area > 450 && b.p.length > 4) {
+        // big footprint: extrude the real outline
+        const shape = new THREE.Shape(b.p.map((p) => new THREE.Vector2(p[0], -p[1]))); const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false }); geo.rotateX(-Math.PI / 2);
+        const uv = geo.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) / 9, uv.getY(k) / (h > 7 ? h / 2 : h));
+        const m = new THREE.Mesh(geo, [this.mat.roofFlat, LM.flats]); m.castShadow = true; m.receiveShadow = true; g.add(m);
+        obstacles.push({ type: 'box', ...ob }); continue;
+      }
+      styles[style].push({ x: ob.x, z: ob.z, yaw: ob.h, hw: ob.hw, hl: ob.hl, h });
+      if (flat) flatCaps.push({ x: ob.x, z: ob.z, yaw: ob.h, hw: ob.hw, hl: ob.hl, h }); else roofsP.push({ x: ob.x, z: ob.z, yaw: ob.h, hw: ob.hw, hl: ob.hl, h });
+      obstacles.push({ type: 'box', ...ob });
+    }
+    for (const st in styles) {
+      const l = styles[st]; if (!l.length) continue;
+      const im = new THREE.InstancedMesh(this.houseGeo, LM[st], l.length);
+      l.forEach((q, k) => { _p.set(q.x, 0, q.z); _e.set(0, q.yaw, 0); _q.setFromEuler(_e); _s.set(q.hw * 2, q.h, q.hl * 2); _m.compose(_p, _q, _s); im.setMatrixAt(k, _m); });
+      im.castShadow = true; im.receiveShadow = true; im.userData.shared = true; g.add(im);
+    }
+    if (roofsP.length) { const im = new THREE.InstancedMesh(this.roofGeo, this.mat.roof, roofsP.length); roofsP.forEach((q, k) => { _p.set(q.x, q.h, q.z); _e.set(0, q.yaw, 0); _q.setFromEuler(_e); _s.set((q.hw + 0.5) * 2 * Math.SQRT1_2, 1.6 + Math.min(q.hw, q.hl) * 0.2, (q.hl + 0.5) * 2 * Math.SQRT1_2); _m.compose(_p, _q, _s); im.setMatrixAt(k, _m); }); im.castShadow = true; im.userData.shared = true; g.add(im); }
+    if (flatCaps.length) { const im = new THREE.InstancedMesh(this.wallGeo, this.mat.roofFlat, flatCaps.length); flatCaps.forEach((q, k) => { _p.set(q.x, q.h, q.z); _e.set(0, q.yaw, 0); _q.setFromEuler(_e); _s.set(q.hw * 2 + 0.3, 0.35, q.hl * 2 + 0.3); _m.compose(_p, _q, _s); im.setMatrixAt(k, _m); }); im.userData.shared = true; g.add(im); }
   }
   // is the point on a speed hump? returns the hump record or null
   humpAt(x, z) {
