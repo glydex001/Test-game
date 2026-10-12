@@ -22,7 +22,8 @@ Download the newest `GlydeXRacing-v1.N.apk` from the Releases page onto the phon
   ✨ turns the full graphics back on).
 - ❚❚ pauses (also the phone's back button); switching apps pauses automatically.
 - Lenasia mode is a free-roam map of the real suburb built from OpenStreetMap data (`app/src/main/assets/www/lenasia.json`,
-  made by `game/tools/osm2map.mjs` from an OSM export). You start next to Trade Route Mall; the mini-map shows streets and landmarks.
+  made by `game/tools/osm2map.mjs` from an OSM export) with every real building outline from satellite data (`lenasia-bld.json`).
+  You start next to Trade Route Mall; the mini-map shows streets and landmarks.
 
 ## Testing
 
@@ -54,3 +55,4 @@ Car models (CC-BY / MIT, used with attribution):
 Textures and backdrops generated with Higgsfield. Built with three.js.
 Lenasia street furniture (traffic lights, stop signs, humps, street names) and suburb boundaries come from OpenStreetMap tags.
 Map data © OpenStreetMap contributors, ODbL.
+Building footprints in Lenasia from the Google Open Buildings dataset (CC BY 4.0), clipped with `game/tools/clip-buildings.py`.
