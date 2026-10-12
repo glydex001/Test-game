@@ -12,6 +12,13 @@
 <!-- HUD while driving -->
 <div id="hud" class="hidden">
   <div id="speedo">
+    <svg id="gauge" viewBox="0 0 200 112" aria-hidden="true">
+      <defs><linearGradient id="gg" x1="0" x2="1"><stop offset="0" stop-color="#22c55e"/><stop offset=".55" stop-color="#D0B46C"/><stop offset="1" stop-color="#ef4444"/></linearGradient></defs>
+      <path d="M18 100 A82 82 0 0 1 182 100" fill="none" stroke="rgba(0,0,0,.45)" stroke-width="18" stroke-linecap="round"/>
+      <path d="M18 100 A82 82 0 0 1 182 100" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="10" stroke-linecap="round"/>
+      <path id="gaugearc" d="M18 100 A82 82 0 0 1 182 100" fill="none" stroke="url(#gg)" stroke-width="10" stroke-linecap="round" stroke-dasharray="258" stroke-dashoffset="258"/>
+      <path d="M34 100 A66 66 0 0 1 166 100" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="5" stroke-dasharray="1.5 19.2" stroke-linecap="butt"/>
+    </svg>
     <div id="speedval">0</div>
     <div class="unit">km/h</div>
   </div>
@@ -26,7 +33,7 @@
   <div id="pauseov" class="hidden">
     <div class="pausecard">
       <div class="pausetitle">PAUSED</div>
-      <button id="btnResume">▶ KEEP DRIVING</button>
+      <button id="btnResume"><span>▶ KEEP DRIVING</span></button>
       <button id="btnGarage">🏠 Garage</button>
     </div>
   </div>
@@ -34,28 +41,40 @@
   <div id="confetti"></div>
 
   <div id="leftpad">
-    <button class="ctl steer" id="btnLeft" aria-label="Left">◀</button>
-    <button class="ctl steer" id="btnRight" aria-label="Right">▶</button>
+    <button class="ctl steer" id="btnLeft" aria-label="Left"><span>◀</span></button>
+    <button class="ctl steer" id="btnRight" aria-label="Right"><span>▶</span></button>
   </div>
   <div id="wheel" aria-label="Steering wheel">
     <div id="wheelimg">
       <svg viewBox="0 0 200 200" width="100%" height="100%">
-        <defs><radialGradient id="rim" cx="50%" cy="45%" r="55%"><stop offset="0" stop-color="#3a3f47"/><stop offset="1" stop-color="#15181d"/></radialGradient>
-        <radialGradient id="hub" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#5b6572"/><stop offset="1" stop-color="#1c2129"/></radialGradient></defs>
-        <circle cx="100" cy="100" r="92" fill="url(#rim)" stroke="#0c0e12" stroke-width="4"/>
-        <circle cx="100" cy="100" r="66" fill="none" stroke="#0c0e12" stroke-width="3"/>
-        <circle cx="100" cy="100" r="66" fill="rgba(0,0,0,0.0)"/>
-        <path d="M100 100 L34 100 M100 100 L166 100 M100 100 L100 166" stroke="#23282f" stroke-width="22" stroke-linecap="round"/>
-        <path d="M100 100 L34 100 M100 100 L166 100 M100 100 L100 166" stroke="#3a4149" stroke-width="12" stroke-linecap="round"/>
-        <circle cx="100" cy="100" r="30" fill="url(#hub)" stroke="#0c0e12" stroke-width="3"/>
-        <circle cx="100" cy="100" r="13" fill="#D0B46C"/>
-        <rect x="94" y="12" width="12" height="18" rx="4" fill="#D0B46C"/>
+        <defs>
+          <radialGradient id="rim" cx="40%" cy="30%" r="75%"><stop offset="0" stop-color="#474d57"/><stop offset=".6" stop-color="#23272e"/><stop offset="1" stop-color="#0d0f13"/></radialGradient>
+          <linearGradient id="spoke" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d9dde3"/><stop offset=".45" stop-color="#8e959f"/><stop offset=".55" stop-color="#5d646d"/><stop offset="1" stop-color="#b8bec6"/></linearGradient>
+          <radialGradient id="hub" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#2f4766"/><stop offset=".7" stop-color="#17283C"/><stop offset="1" stop-color="#0b1420"/></radialGradient>
+          <radialGradient id="gold" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#f3e2ad"/><stop offset=".6" stop-color="#D0B46C"/><stop offset="1" stop-color="#846839"/></radialGradient>
+        </defs>
+        <circle cx="100" cy="100" r="98" fill="rgba(0,0,0,.35)"/>
+        <circle cx="100" cy="100" r="86" fill="none" stroke="url(#rim)" stroke-width="24"/>
+        <circle cx="100" cy="100" r="97" fill="none" stroke="#06070a" stroke-width="3"/>
+        <circle cx="100" cy="100" r="75" fill="none" stroke="#06070a" stroke-width="3"/>
+        <circle cx="100" cy="100" r="86" fill="none" stroke="#D0B46C" stroke-width="1.4" stroke-dasharray="2.5 5.5" opacity=".55"/>
+        <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="7" stroke-dasharray="40 230" stroke-dashoffset="-120" stroke-linecap="round"/>
+        <g stroke="#0b0d11" stroke-width="2.5" stroke-linejoin="round" fill="url(#spoke)">
+          <path d="M26 92 L26 108 L72 112 L72 88 Z"/>
+          <path d="M174 92 L174 108 L128 112 L128 88 Z"/>
+          <path d="M92 174 L108 174 L112 128 L88 128 Z"/>
+        </g>
+        <g fill="#2a2e35"><circle cx="48" cy="100" r="2.6"/><circle cx="152" cy="100" r="2.6"/><circle cx="100" cy="152" r="2.6"/></g>
+        <circle cx="100" cy="100" r="36" fill="url(#hub)" stroke="#06070a" stroke-width="3"/>
+        <circle cx="100" cy="100" r="30" fill="none" stroke="url(#gold)" stroke-width="3"/>
+        <circle cx="100" cy="100" r="17" fill="url(#gold)" stroke="#5c4a25" stroke-width="1.5"/>
+        <path d="M90 8 L110 8 L107 26 L93 26 Z" fill="#e63946" stroke="#7a1420" stroke-width="1.5"/>
       </svg>
     </div>
   </div>
   <div id="rightpad">
-    <button class="ctl brake" id="btnBrake" aria-label="Brake"><span class="pedal-label">STOP</span></button>
-    <button class="ctl gas" id="btnGas" aria-label="Gas"><span class="pedal-label">GO</span></button>
+    <button class="ctl brake" id="btnBrake" aria-label="Brake"><i class="pedal-plate"></i><span class="pedal-label">STOP</span></button>
+    <button class="ctl gas" id="btnGas" aria-label="Gas"><i class="pedal-plate"></i><span class="pedal-label">GO</span></button>
   </div>
   <div id="extras">
     <button class="ctl small" id="btnHorn" aria-label="Horn">📣</button>
@@ -73,43 +92,64 @@
 <!-- Garage / main menu -->
 <div id="menu">
   <div id="title"><img src="tex/logo.webp" alt="Glyde-X"><span>RACING</span><em>🏁</em></div>
-  <div id="carname">Sports Car</div>
+  <div id="carcard">
+    <div class="cardtag">YOUR CAR</div>
+    <div id="carname">Sports Car</div>
+    <div id="carstats">
+      <div class="stat"><span>SPEED</span><i><b id="stSpeed"></b></i></div>
+      <div class="stat"><span>POWER</span><i><b id="stPower"></b></i></div>
+      <div class="stat"><span>GRIP</span><i><b id="stGrip"></b></i></div>
+    </div>
+  </div>
   <button id="prevCar" class="arrow" aria-label="Previous car">‹</button>
   <button id="nextCar" class="arrow" aria-label="Next car">›</button>
 
   <div id="options">
-    <div class="optrow" id="worldRow">
+    <div class="optrow" id="worldRow" data-label="WORLD">
       <button class="opt" data-world="country">🌳</button>
       <button class="opt" data-world="desert">🌵</button>
       <button class="opt" data-world="city">🏙️</button>
       <button class="opt" data-world="snow">⛄</button>
       <button class="opt" data-world="lenasia">🏘️</button>
     </div>
-    <div class="optrow" id="timeRow">
+    <div class="optrow" id="timeRow" data-label="TIME">
       <button class="opt" data-time="day">☀️</button>
       <button class="opt" data-time="sunset">🌇</button>
       <button class="opt" data-time="night">🌙</button>
       <button class="opt" data-time="rain">🌧️</button>
     </div>
-    <div class="optrow" id="miscRow">
+    <div class="optrow" id="miscRow" data-label="SETTINGS">
       <button class="opt" id="optTraffic">🚗🚙</button>
       <button class="opt" id="optSound">🔊</button>
       <button class="opt" id="optTilt">📱</button>
       <button class="opt" id="optCtl">🎡</button>
       <button class="opt" id="optEco" title="Eco mode: cooler phone">🔋</button>
+      <button class="opt" id="optVoice" title="Voice: reads names and lessons aloud">🗣️</button>
     </div>
   </div>
 
-  <div id="colors"></div>
+  <div id="colorcard"><div class="cardtag">COLOUR</div><div id="colors"></div></div>
   <button id="btnBook" aria-label="Sticker book">📒<span id="bookstars">⭐ 0</span></button>
   <button id="btnLock" class="hidden" aria-label="Parent lock (hold)"><span>🔓</span><i id="lockring"></i></button>
   <div id="lockhint" class="hidden">Hold 🔒 for 2 seconds to unlock settings</div>
-  <button id="btnPlay">DRIVE</button>
+  <button id="btnPlay"><span>DRIVE <em>🏁</em></span></button>
   <div id="book" class="hidden">
     <div class="bookcard">
       <div class="bookhead"><span>📒 My Stickers</span><span id="bookstats"></span><button id="btnBookClose">✕</button></div>
       <div id="bookgrid"></div>
     </div>
+  </div>
+</div>
+
+<!-- dua before driving -->
+<div id="dua" class="hidden">
+  <div class="duacard">
+    <div class="duabism">بِسْمِ ٱللَّٰهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ</div>
+    <div class="duatitle">DUA BEFORE WE DRIVE</div>
+    <div class="duaar">سُبْحَانَ ٱلَّذِي سَخَّرَ لَنَا هَٰذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ وَإِنَّا إِلَىٰ رَبِّنَا لَمُنقَلِبُونَ</div>
+    <div class="duatr">Subhanalladhi sakhkhara lana hadha wa ma kunna lahu muqrinin, wa inna ila Rabbina lamunqalibun</div>
+    <div class="duaen">Glory to Him who gave us this car to ride — we could never have done it on our own — and to our Lord we will return.</div>
+    <button id="btnBismillah"><span>🤲 BISMILLAH — LET'S GO!</span></button>
   </div>
 </div>
 

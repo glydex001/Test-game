@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { buildTrees } from './road.js';
 import { addStar, removeStars } from './goals.js';
 import { CARS, hasCar, instantiate, disposeInstance } from './cars.js';
+import { loadLandmarks, hasLandmark, landmarkInstances, fitLandmark, LANDMARKS } from './landmarks.js';
 
 const TILE = 400;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -23,6 +24,8 @@ export class OsmWorld {
     this.tiles = new Map(); this.roadMeshes = new Map(); this.areaMeshes = new Map(); this.signCache = new Map(); this.signMats = [];
     this.buildIndex();
     this.makeMaterials();
+    this.lm = [];
+    loadLandmarks(() => { for (const [tk, t] of this.tiles) { this.disposeTile(t); this.tiles.delete(tk); } });
   }
 
   // ---------------------------------------------------------------- indexing
@@ -128,7 +131,7 @@ export class OsmWorld {
           const px = sx + d.ux * (d.w / 2 + 3) - d.uz * (d.w / 2 + 1.2), pz = sz + d.uz * (d.w / 2 + 3) + d.ux * (d.w / 2 + 1.2);
           const face = Math.atan2(-d.ux, -d.uz);   // head faces the traffic coming towards the node
           const axis = Math.abs(Math.atan2(d.uz, d.ux)) % Math.PI < Math.PI / 4 || Math.abs(Math.atan2(d.uz, d.ux)) % Math.PI > 3 * Math.PI / 4 ? 0 : 1;
-          poles.push({ x: px, z: pz, h: 4.2 }); heads.push({ x: px, z: pz, yaw: face, axis, node: sx * 7 + sz * 13 });
+          poles.push({ x: px, z: pz, h: 4.2 }); heads.push({ x: px, z: pz, yaw: face, axis, node: sx * 7 + sz * 13, nx: sx, nz: sz, ux: d.ux, uz: d.uz });
           obstacles.push({ type: 'circle', x: px, z: pz, r: 0.15 });
         }
       } else if (kind === 'stop') {
@@ -173,17 +176,62 @@ export class OsmWorld {
     if (humps.length) { const im = new THREE.InstancedMesh(this.humpGeo, this.mat.hump, humps.length); humps.forEach((q, k) => { _p.set(q.x, 0.02, q.z); _e.set(0, q.yaw, 0); _q.setFromEuler(_e); _s.set(q.w - 0.6, 0.24, 0.9); _m.compose(_p, _q, _s); im.setMatrixAt(k, _m); }); im.userData.shared = true; g.add(im); this.humpList = this.humpList || []; }
     if (stripes.length) { const geo = new THREE.PlaneGeometry(1, 1); geo.rotateX(-Math.PI / 2); const im = new THREE.InstancedMesh(geo, this.mat.stripe, stripes.length); stripes.forEach((q, k) => { _p.set(q.x, 0.1, q.z); _e.set(0, q.yaw, 0); _q.setFromEuler(_e); _s.set(q.len, 1, 2.2); _m.compose(_p, _q, _s); im.setMatrixAt(k, _m); }); im.userData.shared = true; g.add(im); }
     for (const b of boards) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.25), this.streetSignMaterial(b.name)); m.position.set(b.x, b.y, b.z); m.rotation.y = b.yaw; g.add(m); }
-    return { humps };
+    // boost pads on the main roads through this tile (one per direction every ~320 m)
+    const pads = [];
+    for (const ri of (this.tileRoads.get(tk) || [])) {
+      const r = this.roads[ri]; if (!/^(primary|secondary|tertiary|trunk)$/.test(r.t) || r.len < 120) continue;
+      const pts = r.n.map((i) => this.nodes[i]); let acc = 90 + (hash(ri, 3, 17) * 200) | 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1]; const L = r.seg[i]; const ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L;
+        while (acc < L) {
+          const x = a[0] + ux * acc, z = a[1] + uz * acc;
+          if (x >= tx * TILE && x < (tx + 1) * TILE && z >= tz * TILE && z < (tz + 1) * TILE && !this.tileSigns.get(tk)?.some((sg) => Math.hypot(sg[0] - x, sg[1] - z) < 30)) {
+            for (const dir of (r.one ? [1] : [1, -1])) { const fx = ux * dir, fz = uz * dir; const lx = fz, lz = -fx; const off = r.w / 4; pads.push({ x: x + lx * off, z: z + lz * off, yaw: Math.atan2(-fx, -fz), fx, fz }); }
+          }
+          acc += 320;
+        }
+        acc -= L;
+      }
+    }
+    if (pads.length) { const M = this.M; const im = new THREE.InstancedMesh(M.padGeo, M.pad, pads.length); pads.forEach((q, k) => { _p.set(q.x, 0.1, q.z); _e.set(0, q.yaw, 0); _q.setFromEuler(_e); _s.set(1, 1, 1); _m.compose(_p, _q, _s); im.setMatrixAt(k, _m); }); im.userData.shared = true; im.renderOrder = 1; g.add(im); }
+    return { humps, pads };
+  }
+  // the light head for someone at (x, z) heading (fx, fz): state + distance to the stop line, or null
+  lightAhead(x, z, fx, fz) {
+    const t = performance.now() / 1000; let best = null;
+    for (const grp of this.tlHeads) {
+      if (!grp.mesh.parent) continue;
+      for (const q of grp.heads) {
+        const dx = q.nx - x, dz = q.nz - z; const along = dx * fx + dz * fz; if (along < -3 || along > 40) continue;
+        if (Math.abs(dx * fz - dz * fx) > 9) continue;                       // not on my road
+        if (-(q.ux * fx + q.uz * fz) < 0.75) continue;                       // the head for my approach points back at me
+        const dist = along - 6; if (!best || dist < best.dist) best = { state: this.headState(q, t), dist, key: q.node + ':' + q.axis };
+      }
+    }
+    return best;
+  }
+  headState(q, t) { const cyc = t % 24; const ph = (cyc + (q.node % 7)) % 24; const mine = q.axis === 0 ? ph : (ph + 12) % 24; return mine < 8 ? 'g' : mine < 10 ? 'a' : 'r'; }
+  // nearest masjid (by name) within dist, for the greeting
+  masjidNear(x, z, dist) {
+    if (!this.masjids) this.masjids = this.data.buildings.filter((b) => b.rel === 'muslim' || /masjid|mosque/i.test(b.name || '')).map((b) => ({ c: b.c, name: b.name && !/place_of_worship/.test(b.name) ? b.name : 'Masjid' }));
+    let best = null, bd = dist;
+    for (const m of this.masjids) { const d = Math.hypot(m.c[0] - x, m.c[1] - z); if (d < bd) { bd = d; best = m; } }
+    return best;
+  }
+  // boost pad under the car?
+  padAt(x, z) {
+    const t = this.tiles.get(this.key(Math.floor(x / TILE), Math.floor(z / TILE))); if (!t || !t.pads) return null;
+    for (const p of t.pads) { const dx = x - p.x, dz = z - p.z; if (dx * dx + dz * dz > 16) continue; const along = dx * p.fx + dz * p.fz, side = dx * p.fz - dz * p.fx; if (Math.abs(along) < 2.4 && Math.abs(side) < 1.9) return p; }
+    return null;
   }
   // traffic light phases: axis 0 and axis 1 alternate (8 s green, 2 s amber, 2 s all red)
   tickLights(t, px, pz) {
-    const cyc = t % 24; const c = new THREE.Color();
+    const c = new THREE.Color();
     for (const h of this.tlHeads) {
       if (!h.mesh.parent) continue;
       const first = h.heads[0]; if (Math.abs(first.x - px) > 300 || Math.abs(first.z - pz) > 300) continue;
       h.heads.forEach((q, k) => {
-        const ph = (cyc + (q.node % 7)) % 24; const mine = q.axis === 0 ? ph : (ph + 12) % 24;
-        const st = mine < 8 ? 'g' : mine < 10 ? 'a' : 'r';
+        const st = this.headState(q, t);
         h.mesh.setColorAt(k * 3, c.setHex(st === 'r' ? 0xff2020 : 0x330808)); h.mesh.setColorAt(k * 3 + 1, c.setHex(st === 'a' ? 0xffb020 : 0x332008)); h.mesh.setColorAt(k * 3 + 2, c.setHex(st === 'g' ? 0x20ff60 : 0x083318));
       });
       h.mesh.instanceColor.needsUpdate = true;
@@ -248,7 +296,7 @@ export class OsmWorld {
   }
 
   buildTile(tx, tz, tk) {
-    const g = new THREE.Group(); const obstacles = []; const N = this.nodes;
+    const g = new THREE.Group(); const obstacles = []; const N = this.nodes; this.lm = [];
     const x0 = tx * TILE, z0 = tz * TILE;
     // roads (shared meshes, refcounted)
     const roads = this.tileRoads.get(tk) || [];
@@ -425,11 +473,21 @@ export class OsmWorld {
     }
     // Glyde-X showroom landmark
     if (this.style.showroomAt && Math.floor(this.style.showroomAt[0] / TILE) === tx && Math.floor(this.style.showroomAt[1] / TILE) === tz) {
-      const b = this.style.makeBuilding(true); const [sx, sz, syaw] = this.style.showroomAt; b.group.position.set(sx, 0, sz); b.group.rotation.y = syaw; g.add(b.group);
-      obstacles.push({ type: 'box', x: sx, z: sz, hw: b.w / 2, hl: b.d / 2, h: syaw });
+      const [sx, sz, syaw] = this.style.showroomAt;
+      if (hasLandmark('showroom')) {
+        const S = 18, P = LANDMARKS.showroom; this.lm.push({ id: 'showroom', x: sx, z: sz, yaw: syaw, sx: S, sy: S, sz: S });
+        // Glyde-X sign on the blank panel above the doors
+        const sign = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 1.6), this.M.sign); sign.position.set(sx + Math.sin(syaw) * (P.d * S / 2 + 0.06), P.h * S * 0.64, sz + Math.cos(syaw) * (P.d * S / 2 + 0.06)); sign.rotation.y = syaw; sign.userData.shared = true; g.add(sign);
+        obstacles.push({ type: 'box', x: sx, z: sz, hw: S / 2, hl: P.d * S / 2, h: syaw });
+      } else {
+        const b = this.style.makeBuilding(true); b.group.position.set(sx, 0, sz); b.group.rotation.y = syaw; g.add(b.group);
+        obstacles.push({ type: 'box', x: sx, z: sz, hw: b.w / 2, hl: b.d / 2, h: syaw });
+      }
     }
+    // landmark models collected while building this tile (one draw call per type)
+    { const byId = {}; for (const l of this.lm) (byId[l.id] = byId[l.id] || []).push(l); for (const id in byId) { const im = landmarkInstances(id, byId[id]); if (im) g.add(im); } this.lm = []; }
     this.group.add(g);
-    return { tx, tz, group: g, obstacles, roads, areas: this.tileAreas.get(tk) || [], humps: furn.humps, parked };
+    return { tx, tz, group: g, obstacles, roads, areas: this.tileAreas.get(tk) || [], humps: furn.humps, pads: furn.pads, parked };
   }
   gbNear(x, z, dist) {
     const tx = Math.floor(x / TILE), tz = Math.floor(z / TILE);
@@ -442,12 +500,18 @@ export class OsmWorld {
     for (const i of list) {
       const b = this.gb[i]; const c = b.c;
       if (this.nearBuilding(c[0], c[1], 9)) continue;                       // OSM already has this one
+      if (this.style.showroomAt && Math.hypot(c[0] - this.style.showroomAt[0], c[1] - this.style.showroomAt[1]) < 26) continue;   // the Glyde-X showroom stands here
       const nr = this.nearest(c[0], c[1]); if (nr.d < nr.w / 2 + 2.5) continue;   // sits on a road (bad detection)
       const ob = obbOf(b.p); const area = b.a; const hs = hash(c[0] | 0, c[1] | 0, 3);
       let style, h, flat = false;
       if (area > 450) { style = 'flats'; h = area > 1200 ? 8 : 6.6; flat = true; }
       else if (area < 70) { style = hs < 0.6 ? 'arch' : 'modern'; h = 3.2; flat = hs > 0.6; }
       else { style = hs < 0.35 ? 'arch' : hs < 0.72 ? 'brick' : 'modern'; const two = area > 150 ? hash(c[0] | 0, c[1] | 0, 4) < 0.6 : hash(c[0] | 0, c[1] | 0, 4) < 0.25; h = two ? 6.3 : 3.4; flat = style === 'modern'; }
+      // the big double-storey "Lenasia house" model on large, squarish plots
+      if (area >= 190 && area <= 450 && hasLandmark('house') && area / (4 * ob.hw * ob.hl) > 0.78 && hash(c[0] | 0, c[1] | 0, 6) < 0.45) {
+        const fit = fitLandmark('house', ob, nr.px != null ? nr.px : c[0] + 1, nr.px != null ? nr.pz : c[1], { min: 9, maxH: 7.4, stretch: 1.3 });
+        if (fit) { this.lm.push(fit); obstacles.push({ type: 'box', ...ob }); continue; }
+      }
       if (area > 450 && b.p.length > 4) {
         // big footprint: extrude the real outline
         const shape = new THREE.Shape(b.p.map((p) => new THREE.Vector2(p[0], -p[1]))); const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false }); geo.rotateX(-Math.PI / 2);
@@ -531,25 +595,36 @@ export class OsmWorld {
     const isSchool = /school|college|madressa|madrasah|academy/i.test(label);
     const isInstit = /hospital|clinic|police|library|court|civic|municipal|community|hall|post office|bank/i.test(label);
     const isFlats = /apartments|flats|residential;?apartments/i.test(b.k);
-    const bb = bboxOf(b.p); const span = Math.min(bb[2] - bb[0], bb[3] - bb[1]); const area = polyArea(b.p);
+    const bb = bboxOf(b.p); const span = Math.min(bb[2] - bb[0], bb[3] - bb[1]); const area = polyArea(b.p); const c0 = b.c;
     // heights: OSM mostly has none, so use what the place is
     let h = b.lv ? b.lv * 3.3 : b.h;
     if (!b.lv) { if (isMosque) h = Math.max(h, 7.5); else if (isMall) h = Math.max(h, area > 2500 ? 9 : 7); else if (isSchool || isInstit) h = Math.max(h, 6.6); else if (isFlats) h = Math.max(h, 9.6); else if (isShop) h = Math.max(h, 5.5); else if (b.k === 'house' || b.k === 'residential' || b.k === 'yes') h = Math.max(h, hash(b.c[0] | 0, b.c[1] | 0, 5) < 0.45 && area > 110 ? 6.3 : 3.5); }
+    // real 3D landmark models: a masjid fitted to its footprint, a mall entrance block on the road edge
+    let lmFit = null, mallLM = null;
+    if (isMosque && hasLandmark('masjid')) {
+      const ob = obbOf(b.p); const nr0 = this.nearest(c0[0], c0[1]);
+      lmFit = fitLandmark('masjid', ob, nr0.px != null ? nr0.px : c0[0] + 1, nr0.px != null ? nr0.pz : c0[1], { min: 13, maxH: 34, stretch: 1.25 });
+      if (lmFit) { this.lm.push(lmFit); h = area / (4 * ob.hw * ob.hl) > 0.72 ? 0 : 2.4; }
+    } else if (isMall && hasLandmark('mall') && area > 1500) {
+      const e = this.entranceEdge(b);
+      if (e) { const P = LANDMARKS.mall; const S = Math.max(24, Math.min(36, e.L * 0.9)); const sy = Math.min(S, 11 / P.h);
+        mallLM = { id: 'mall', x: e.mx + e.nx * (0.6 - P.d * S / 2), z: e.mz + e.nz * (0.6 - P.d * S / 2), yaw: Math.atan2(e.nx, e.nz), sx: S, sy, sz: S }; this.lm.push(mallLM); }
+    }
     const shape = new THREE.Shape(b.p.map((p) => new THREE.Vector2(p[0], -p[1])));
-    const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false }); geo.rotateX(-Math.PI / 2);
+    const geo = h > 0 ? new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false }) : null; if (geo) geo.rotateX(-Math.PI / 2);
     // wall uvs: ExtrudeGeometry's side uvs are in metres already (u along the wall, v up) → scale to texture tiles
-    { const uv = geo.attributes.uv; const pos = geo.attributes.position; const sideStart = geo.groups[1] ? geo.groups[1].start : 0; for (let i = 0; i < uv.count; i++) { uv.setXY(i, uv.getX(i) / 9, uv.getY(i) / (h > 7 ? h / 2 : h)); } void sideStart; void pos; }
+    if (geo) { const uv = geo.attributes.uv; for (let i = 0; i < uv.count; i++) { uv.setXY(i, uv.getX(i) / 9, uv.getY(i) / (h > 7 ? h / 2 : h)); } }
     const house = hash(b.c[0] | 0, b.c[1] | 0, 9); const houseMat = house < 0.4 ? LM.arch : house < 0.75 ? LM.brick : LM.modern;
     const mat = isMosque ? LM.mosque : (isTemple || isChurch) ? this.mat.white : isMall ? LM.mall : isShop ? LM.shops : (isSchool || isInstit || isFlats) ? LM.flats : h > 7.5 ? LM.flats : houseMat;
-    const m = new THREE.Mesh(geo, [this.mat.roofFlat, mat]); m.castShadow = true; m.receiveShadow = true;
-    const g = new THREE.Group(); g.add(m);
+    const g = new THREE.Group();
+    if (geo) { const m = new THREE.Mesh(geo, [this.mat.roofFlat, mat]); m.castShadow = true; m.receiveShadow = true; g.add(m); }
     const c = b.c;
     // pitched tile roofs on ordinary houses that are roughly rectangular
     if (!isMosque && !isTemple && !isChurch && !isMall && !isShop && !isSchool && !isInstit && !isFlats && h <= 7 && b.p.length <= 6 && span > 5) {
       const ob = obbOf(b.p); const roof = new THREE.Mesh(this.roofGeo, this.mat.roof); roof.position.set(ob.x, h, ob.z); roof.rotation.y = ob.h; roof.scale.set((ob.hw + 0.5) * 2 * Math.SQRT1_2, 1.8 + ob.hw * 0.15, (ob.hl + 0.5) * 2 * Math.SQRT1_2); roof.castShadow = true; roof.userData.shared = true; g.add(roof);
     }
     // landmark shapes so places are recognisable from the road
-    if (isMosque) {
+    if (isMosque && !lmFit) {
       const R = Math.min(7, Math.max(2.5, span * 0.26));
       const dome = new THREE.Mesh(new THREE.SphereGeometry(R, 24, 14, 0, Math.PI * 2, 0, Math.PI / 2), this.mat.dome); dome.position.set(c[0], h, c[1]); dome.castShadow = true; g.add(dome);
       const drum = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 1.2, 24), this.mat.white); drum.position.set(c[0], h + 0.6, c[1]); g.add(drum); dome.position.y = h + 1.2;
@@ -577,7 +652,7 @@ export class OsmWorld {
     } else if (isMall) {
       // parapet band + entrance canopy + roof plant
       const nr = this.nearest(c[0], c[1]); const e = this.roadEdge(b, nr);
-      if (e) { const can = new THREE.Mesh(new THREE.BoxGeometry(Math.min(16, e.L * 0.5), 0.5, 5), this.mat.navy); can.position.set(e.mx + e.nx * 2.5, 4.2, e.mz + e.nz * 2.5); can.rotation.y = Math.atan2(e.nx, e.nz); can.castShadow = true; g.add(can);
+      if (e && !mallLM) { const can = new THREE.Mesh(new THREE.BoxGeometry(Math.min(16, e.L * 0.5), 0.5, 5), this.mat.navy); can.position.set(e.mx + e.nx * 2.5, 4.2, e.mz + e.nz * 2.5); can.rotation.y = Math.atan2(e.nx, e.nz); can.castShadow = true; g.add(can);
         for (const sx of [-1, 1]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 4, 8), this.mat.pole); const px = e.mx + e.nx * 4.6 + -e.nz * sx * Math.min(7, e.L * 0.22), pz = e.mz + e.nz * 4.6 + e.nx * sx * Math.min(7, e.L * 0.22); post.position.set(px, 2, pz); g.add(post); } }
       const plant = new THREE.Mesh(new THREE.BoxGeometry(Math.max(4, span * 0.25), 2, Math.max(4, span * 0.25)), this.mat.roofFlat); plant.position.set(c[0], h + 1, c[1]); g.add(plant);
     }
@@ -595,10 +670,22 @@ export class OsmWorld {
         const w = Math.min(isMall ? 22 : 16, Math.max(6, e.L * 0.8)); const hh = w * (isMall ? 0.14 : 0.16);
         const tex = this.nameTexture(b.name, isMosque ? '🕌' : isTemple ? '🛕' : isChurch ? '⛪' : isSchool ? '🏫' : isMall ? '🛍️' : isInstit ? '🏛️' : '');
         const board = new THREE.Mesh(new THREE.BoxGeometry(w, hh, 0.25), [this.mat.navy, this.mat.navy, this.mat.navy, this.mat.navy, tex, tex]);
-        board.position.set(e.mx + e.nx * 0.3, h + hh / 2 + 0.4, e.mz + e.nz * 0.3); board.rotation.y = Math.atan2(e.nx, e.nz); g.add(board);
+        const by = lmFit ? Math.min(h + hh / 2 + 0.4, 1.2) : h + hh / 2 + 0.4; const push = lmFit ? 1.2 : 0.3;
+        board.position.set(e.mx + e.nx * push, by, e.mz + e.nz * push); board.rotation.y = Math.atan2(e.nx, e.nz); g.add(board);
       }
     }
     return g;
+  }
+  // the best edge for a mall entrance: long, and with a proper street in front of it
+  entranceEdge(b) {
+    const c = b.c; let best = null, bs = -Infinity;
+    for (let i = 0; i < b.p.length; i++) {
+      const a = b.p[i], q = b.p[(i + 1) % b.p.length]; const L = Math.hypot(q[0] - a[0], q[1] - a[1]); if (L < 18) continue;
+      const mx = (a[0] + q[0]) / 2, mz = (a[1] + q[1]) / 2; let nx = -(q[1] - a[1]) / L, nz = (q[0] - a[0]) / L; if ((mx - c[0]) * nx + (mz - c[1]) * nz < 0) { nx = -nx; nz = -nz; }
+      const nr = this.nearest(mx + nx * 14, mz + nz * 14, { skipMinor: true }); const d = nr.px != null ? Math.hypot(mx + nx * 14 - nr.px, mz + nz * 14 - nr.pz) : 999;
+      const score = Math.min(L, 60) - d * 0.8; if (score > bs) { bs = score; best = { a, q, mx, mz, L, nx, nz, d }; }
+    }
+    return best && best.d < 70 ? best : null;
   }
   // the polygon edge nearest the road, with its outward normal
   roadEdge(b, nr) {
@@ -648,6 +735,14 @@ export class OsmWorld {
       agent.r = ri; agent.i = i; agent.t = Math.random(); agent.dir = r.one ? 1 : (Math.random() < 0.5 ? 1 : -1); agent.speed = (ROAD_SPEED[r.t] || 10) * rand(0.8, 1.0);
       return true;
     }
+    return false;
+  }
+  // should this agent hold at a red light? (next node has a light for its approach and it is close)
+  agentRed(agent) {
+    const r = this.roads[agent.r]; const L = r.seg[agent.i]; const remain = agent.dir > 0 ? (1 - agent.t) * L : agent.t * L; if (remain > 9 || remain < 0.5) return false;
+    const n = this.nodes[r.n[agent.dir > 0 ? agent.i + 1 : agent.i]]; const t = performance.now() / 1000;
+    const a = this.nodes[r.n[agent.i]], b = this.nodes[r.n[agent.i + 1]]; const ux = (b[0] - a[0]) / L * agent.dir, uz = (b[1] - a[1]) / L * agent.dir;
+    for (const grp of this.tlHeads) { if (!grp.mesh.parent) continue; for (const q of grp.heads) { if (Math.abs(q.nx - n[0]) > 2 || Math.abs(q.nz - n[1]) > 2) continue; if (-(q.ux * ux + q.uz * uz) < 0.75) continue; return this.headState(q, t) !== 'g'; } }
     return false;
   }
   advanceAgent(agent, dt) {

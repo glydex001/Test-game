@@ -5,6 +5,7 @@ import { createWorld } from './world.js';
 import { LANES, ROAD_W, RAIL_OFF, DS } from './road.js';
 import { CarBody, collideCars, collideCircle, collideBox } from './physics.js';
 import { Sound } from './sound.js';
+import { Voice, COLOR_NAMES, missionLetter, NUM_WORDS } from './voice.js';
 import { Rain, SkidMarks } from './fx.js';
 import { P, saveP, STICKERS, newStickers, initStars, addStar, updateStars, clearStars, makeTargetMarker, makeRecliner, Missions } from './goals.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -21,7 +22,7 @@ const randi = (a, b) => Math.floor(rand(a, b + 1));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 const SAVE_KEY = 'kidcars-v3';
-let settings = { car: 0, color: 0, world: 'country', time: 'day', traffic: true, sound: true, tilt: false, cam: 0, controls: 'wheel', eco: true };
+let settings = { car: 0, color: 0, world: 'country', time: 'day', traffic: true, sound: true, tilt: false, cam: 0, controls: 'wheel', eco: true, voice: true };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); } catch (e) { /* ignore */ }
 if (!CARS[settings.car]) settings.car = 0;
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ } }
@@ -144,7 +145,7 @@ function setPlayerCar() {
 }
 
 const traffic = [];
-for (let i = 0; i < 6; i++) traffic.push({ mesh: null, spec: CARS[0], body: null, lane: 0, s: 0, target: 20, active: false, idx: 0 });
+for (let i = 0; i < 10; i++) traffic.push({ mesh: null, spec: CARS[0], body: null, lane: 0, s: 0, target: 20, active: false, idx: 0 });
 function spawnTraffic(t, ahead) {
   const lane = randi(0, 2);
   let s = ahead ? G.s + rand(120, 420) : G.s - rand(60, 90);
@@ -289,22 +290,25 @@ window.addEventListener('deviceorientation', (e) => {
 const menu = $('menu'), hud = $('hud');
 let state = 'menu';
 function refreshMenu() {
-  $('carname').textContent = CARS[settings.car].name;
+  const spec = CARS[settings.car]; $('carname').textContent = spec.name;
+  $('stSpeed').style.width = Math.round(100 * spec.maxKmh / 500) + '%';
+  $('stPower').style.width = Math.round(100 * spec.accel / 18) + '%';
+  $('stGrip').style.width = Math.round(100 * spec.handling / 10.5) + '%';
   document.querySelectorAll('#worldRow .opt').forEach((b) => b.classList.toggle('on', b.dataset.world === settings.world));
   document.querySelectorAll('#timeRow .opt').forEach((b) => b.classList.toggle('on', b.dataset.time === settings.time));
   $('optTraffic').classList.toggle('off', !settings.traffic);
   $('optSound').classList.toggle('off', !settings.sound); $('optSound').textContent = settings.sound ? '🔊' : '🔇';
-  $('optTilt').classList.toggle('off', !settings.tilt);
+  $('optTilt').classList.toggle('off', !settings.tilt); $('optVoice').classList.toggle('off', !settings.voice); Voice.on = settings.voice;
   document.querySelectorAll('.swatch').forEach((s, i) => s.classList.toggle('on', i === settings.color));
 }
 const colorsEl = $('colors');
 COLORS.forEach((c, i) => {
   const s = document.createElement('button'); s.className = 'swatch'; s.style.background = '#' + c.toString(16).padStart(6, '0');
-  s.addEventListener('pointerdown', () => { settings.color = i; save(); setPlayerCar(); refreshMenu(); });
+  s.addEventListener('pointerdown', () => { settings.color = i; save(); setPlayerCar(); refreshMenu(); Voice.say(COLOR_NAMES[i], { min: 300 }); });
   colorsEl.appendChild(s);
 });
 function changeCar(dir) {
-  settings.car = (settings.car + dir + CARS.length) % CARS.length; save(); setPlayerCar(); refreshMenu(); G.menuAngle = 0.7;
+  settings.car = (settings.car + dir + CARS.length) % CARS.length; save(); setPlayerCar(); refreshMenu(); G.menuAngle = 0.7; Voice.say(CARS[settings.car].name, { min: 500 });
   if (!hasCar(CARS[settings.car].id, false)) loadCar(CARS[settings.car].id, false).then(() => { if (state === 'menu' && CARS[settings.car].id === playerSpec.id) setPlayerCar(); });
 }
 $('prevCar').addEventListener('pointerdown', (e) => { e.preventDefault(); changeCar(-1); });
@@ -337,18 +341,19 @@ function toast(big, txt, confetti) {
 function missionEvent(type, v) {
   if (state !== 'drive') return;
   const r = missions.event(type, v);
-  if (r === 'pickup') { attachRecliner(); toast('GOT IT! 🛋️', missions.label().text); Sound.fanfare(); refreshMissionLabel(); }
+  if (r === 'pickup') { attachRecliner(); toast('GOT IT! 🛋️', missions.label().text); Sound.fanfare(); refreshMissionLabel(); Voice.say('Got the recliner! ' + missions.label().text); }
   else if (r === 'done') missionDone();
 }
 function missionDone() {
   const m = missions.cur; P.stars += m.reward; P.missions++; if (m.kind === 'deliver') { P.deliveries++; detachRecliner(); }
-  toast('GREAT JOB!', `+${m.reward} ⭐`, true); Sound.fanfare(true); $('starnum').textContent = P.stars; saveP();
+  toast('GREAT JOB!', `Alhamdulillah · +${m.reward} ⭐`, true); Sound.fanfare(true); $('starnum').textContent = P.stars; saveP(); Voice.say('Alhamdulillah! Great job!');
   for (const s of newStickers()) toast('NEW STICKER!', `${s.e} ${s.n}`);
   G.missionT = 3.5;   // next mission after the celebration
 }
 function startMission() {
   missions.next({ isMap: !!W.road.isMap, road: W.road, x: body.x, z: body.z, maxKmh: playerSpec.maxKmh, traffic: settings.traffic, showroomAt: W.current.showroomAt });
   refreshMissionLabel(); toast(missions.cur.icon + ' ' + missions.cur.text, 'New mission!');
+  const L = missionLetter(missions.cur); if (L) { toast(`${L.L} is for ${L.word}`, missions.cur.icon + ' ' + L.word); Voice.say(`New mission! ${L.L} is for ${L.word}. ${missions.cur.text}`); } else Voice.say('New mission! ' + missions.cur.text);
 }
 let lastLabel = '';
 function refreshMissionLabel() { const l = missions.label(); const key = l.icon + l.text + l.prog; if (key === lastLabel) return; lastLabel = key; $('micon').textContent = l.icon; $('mtext').textContent = l.text; if (!missions.target()) $('mprog').textContent = l.prog; }
@@ -356,6 +361,7 @@ function attachRecliner() { if (!recliner) recliner = makeRecliner(); const box 
 function detachRecliner() { if (recliner && recliner.parent) recliner.parent.remove(recliner); }
 document.querySelectorAll('#timeRow .opt').forEach((b) => b.addEventListener('pointerdown', () => { settings.time = b.dataset.time; save(); applyTime(); refreshMenu(); }));
 $('optTraffic').addEventListener('pointerdown', () => { settings.traffic = !settings.traffic; save(); refreshMenu(); });
+$('optVoice').addEventListener('pointerdown', () => { settings.voice = !settings.voice; save(); refreshMenu(); if (settings.voice) Voice.say('Voice on!'); else Voice.stop(); });
 $('optSound').addEventListener('pointerdown', () => { settings.sound = !settings.sound; save(); Sound.init(); Sound.setOn(settings.sound); refreshMenu(); });
 $('optCtl').addEventListener('pointerdown', () => { settings.controls = settings.controls === 'wheel' ? 'buttons' : 'wheel'; save(); applyControlsMode(); });
 $('optEco').addEventListener('pointerdown', () => { settings.eco = !settings.eco; save(); applyQuality(); });
@@ -363,7 +369,11 @@ $('optTilt').addEventListener('pointerdown', () => {
   settings.tilt = !settings.tilt; save(); refreshMenu();
   if (settings.tilt && typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) DeviceOrientationEvent.requestPermission().catch(() => {});
 });
-$('btnPlay').addEventListener('pointerdown', (e) => { e.preventDefault(); if (!W.road) return; Sound.init(); Sound.resume(); Sound.setOn(settings.sound); startDrive(); });
+$('btnPlay').addEventListener('pointerdown', (e) => { e.preventDefault(); if (!W.road) return; Sound.init(); Sound.resume(); Sound.setOn(settings.sound); if (TEST) startDrive(); else showDua(); });
+// the travel dua before every drive (Bismillah to go)
+function showDua() { state = 'dua'; menu.classList.add('hidden'); $('dua').classList.remove('hidden'); if (!Voice.say('بِسْمِ اللَّهِ', { lang: 'ar' })) Voice.say('Bismillah'); }
+function hideDua() { $('dua').classList.add('hidden'); }
+$('btnBismillah').addEventListener('pointerdown', (e) => { e.preventDefault(); if (state !== 'dua') return; hideDua(); P.duas = (P.duas || 0) + 1; Voice.say("Bismillah! Let's drive safely."); startDrive(); });
 $('btnPause').addEventListener('pointerdown', (e) => { e.preventDefault(); pauseGame(); });
 $('btnResume').addEventListener('pointerdown', (e) => { e.preventDefault(); resumeGame(); });
 $('btnGarage').addEventListener('pointerdown', (e) => { e.preventDefault(); toMenu(); });
@@ -412,8 +422,8 @@ function startDrive() {
   const p = W.road.isMap ? W.road.startPose() : W.road.pointAt(G.s);
   body = new CarBody(playerSpec); body.x = p.x; body.z = p.z; body.h = p.h;
   applyDamageLook(); $('totaled').classList.add('hidden');
-  traffic.forEach((t) => { if (settings.traffic) (W.road.isMap ? spawnMapTraffic(t) : spawnTraffic(t, true)); else { t.active = false; if (t.mesh) t.mesh.visible = false; } });
-  P.cars[playerSpec.id] = 1; $('starnum').textContent = P.stars; G.combo = 0; G.missionT = 0; detachRecliner(); skids.clear();
+  traffic.forEach((t, i) => { if (settings.traffic && (W.road.isMap || i < 6)) (W.road.isMap ? spawnMapTraffic(t) : spawnTraffic(t, true)); else { t.active = false; if (t.mesh) t.mesh.visible = false; } });
+  P.cars[playerSpec.id] = 1; $('starnum').textContent = P.stars; G.combo = 0; G.missionT = 0; G.starsRun = 0; G.saidStreet = ''; G.lastMasjid = null; G.redStop = G.greenSaid = G.redRun = null; G.lastPad = null; G.padT = 0; detachRecliner(); skids.clear();
   for (const k of ['roll', 'pitch', 'heave']) { S[k].x = 0; S[k].v = 0; } S.prevVf = 0; S.wasOff = false;
   W.road.ensure(W.road.isMap ? body.x : G.idx, body.z);
   startMission();
@@ -424,7 +434,7 @@ function spawnMapTraffic(t) {
   t.body = new CarBody(t.spec); t.body.mass = 60; t.agent = {};
   if (!W.road.spawnAgent(t.agent, body.x, body.z)) { t.active = false; t.mesh.visible = false; return; }
   W.road.advanceAgent(t.agent, 0); t.body.x = t.agent.x; t.body.z = t.agent.z; t.body.h = t.agent.h;
-  t.active = true; t.mesh.visible = true;
+  t.active = true; t.mesh.visible = true; t.spd = null;
 }
 function toMenu() {
   state = 'menu'; hud.classList.add('hidden'); menu.classList.remove('hidden'); $('totaled').classList.add('hidden'); $('pauseov').classList.add('hidden'); $('polaroid').classList.add('hidden');
@@ -465,7 +475,7 @@ function hit(closing) {
 // ------------------------------------------------------------------ main loop
 const clock = new THREE.Clock();
 const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
-const speedEl = $('speedval'), distEl = $('dist'), boostFill = $('boostfill'), boostBtn = $('btnBoost'), streetEl = $('street');
+const speedEl = $('speedval'), gaugeArc = $('gaugearc'), distEl = $('dist'), boostFill = $('boostfill'), boostBtn = $('btnBoost'), streetEl = $('street');
 // mini-map (map mode): roads within ~200 m, heading-up
 const mmCanvas = $('minimap'), mmCtx = mmCanvas.getContext('2d');
 let mmTick = 0;
@@ -502,7 +512,7 @@ function update(dt) {
     // ---- inputs
     const wantBoost = input.boost && G.boostFuel > 0.05 && !G.totaled;
     if (wantBoost && !G.boosting) { Sound.whoosh(); P.boosts++; missionEvent('boost'); }
-    G.boosting = wantBoost;
+    G.boosting = wantBoost || (G.padT || 0) > 0;
     G.boostFuel = G.boosting ? Math.max(0, G.boostFuel - dt / 3) : Math.min(1, G.boostFuel + dt / 9);
     boostFill.style.width = (G.boostFuel * 100).toFixed(0) + '%'; boostBtn.classList.toggle('cooling', G.boostFuel < 0.05);
     let steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
@@ -517,7 +527,19 @@ function update(dt) {
     if (!isMap) { G.idx = near.i; G.s = near.s; }
     const absd = Math.abs(near.d);
     body.offRoad = isMap ? !near.onRoad : absd > ROAD_W / 2 + 0.6; body.surfaceGrip = (body.offRoad ? W.current.offroadGrip : 1) * (W.rain ? 0.7 : 1);
-    if (isMap) { if ((G.frameN = (G.frameN || 0) + 1) % 20 === 0) G.suburb = W.road.suburbAt(body.x, body.z); const nm = near.onRoad && near.name ? near.name : ''; const txt = nm + (G.suburb ? (nm ? ' · ' : '') + G.suburb : ''); if (txt !== streetEl.textContent) streetEl.textContent = txt; }
+    if (isMap) { if ((G.frameN = (G.frameN || 0) + 1) % 20 === 0) G.suburb = W.road.suburbAt(body.x, body.z); const nm = near.onRoad && near.name ? near.name : ''; const txt = nm + (G.suburb ? (nm ? ' · ' : '') + G.suburb : ''); if (txt !== streetEl.textContent) streetEl.textContent = txt; if (nm && nm !== G.saidStreet && Math.abs(body.vf) > 3) { G.saidStreet = nm; Voice.say(nm, { min: 7000 }); }
+      // Assalamu alaikum when passing a masjid
+      if (G.frameN % 15 === 0) { const mj = W.road.masjidNear(body.x, body.z, 75); if (mj && mj !== G.lastMasjid) { G.lastMasjid = mj; P.masjids = (P.masjids || 0) + 1; toast('🕌 Assalamu alaikum', mj.name); Voice.say('Assalamu alaikum! ' + mj.name); Sound.ping(0); } }
+      // traffic lights: learn red = stop, green = go (a star bonus for a proper stop)
+      { const [pfx, pfz] = body.fwd(); const tl = W.road.lightAhead(body.x, body.z, pfx, pfz); const v = Math.abs(body.vf);
+        if (tl && tl.state === 'r' && tl.dist > 2 && tl.dist < 26 && v < 0.6 && G.redStop !== tl.key) { G.redStop = tl.key; P.goodStops = (P.goodStops || 0) + 1; P.stars += 5; $('starnum').textContent = P.stars; toast('GOOD STOP! 🛑', 'Red means STOP · +5 ⭐'); Sound.fanfare(); Voice.say('Good stop! Red means stop.'); }
+        if (tl && tl.state === 'g' && G.redStop === tl.key && G.greenSaid !== tl.key) { G.greenSaid = tl.key; toast('GREEN! 🟢', 'Green means GO'); Voice.say('Green means go!'); }
+        if (tl && tl.state === 'r' && tl.dist < 1.5 && v > 5 && G.redRun !== tl.key) { G.redRun = tl.key; toast('OOPS! 🚦', 'Red means STOP'); Voice.say('Oops! Red means stop. Green means go.'); } }
+    }
+    // boost pads: drive over the glowing arrows for a zoom
+    { const pd = W.road.padAt ? W.road.padAt(body.x, body.z) : null;
+      if (pd && pd !== G.lastPad) { G.lastPad = pd; const [pfx, pfz] = body.fwd(); body.vx += pfx * 7; body.vz += pfz * 7; G.boostFuel = 1; G.padT = 1.4; P.pads = (P.pads || 0) + 1; toast('ZOOM! ⚡', 'Boost pad!'); Sound.whoosh(); vib(40); Voice.say('Zoom!', { min: 4000 }); }
+      else if (!pd) G.lastPad = null; G.padT = Math.max(0, (G.padT || 0) - dt); }
     // speed humps: a thump and a bounce when you cross one too fast
     if (isMap) { const hp = W.road.humpAt(body.x, body.z); if (hp && hp !== G.lastHump) { G.lastHump = hp; const v = Math.abs(body.vf); if (v > 4) { S.heave.v += Math.min(1.6, v * 0.09); S.pitch.v -= Math.min(0.5, v * 0.02); Sound.bump(Math.min(0.6, v / 30)); vib(Math.min(60, v * 2)); if (v > 12) { body.vx *= 0.93; body.vz *= 0.93; } } } else if (!hp) G.lastHump = null; }
     // a damaged car wanders and loses power
@@ -554,7 +576,11 @@ function update(dt) {
         // slow down behind the player
         const dxp = body.x - b.x, dzp = body.z - b.z; const [tfx, tfz] = b.fwd(); const aheadD = dxp * tfx + dzp * tfz; const sideD = Math.abs(dxp * tfz - dzp * tfx);
         const blocked = aheadD > 0 && aheadD < 16 && sideD < 3;
-        const target = blocked ? Math.max(0, Math.abs(body.vf) - 1) : ag.speed;
+        // queue behind other traffic and hold at red lights (so the kid sees cars stop and go too)
+        let queued = false; for (const o of traffic) { if (o === t || !o.active || !o.body) continue; const ddx = o.body.x - b.x, ddz = o.body.z - b.z; const ah = ddx * tfx + ddz * tfz; if (ah > 0 && ah < 12 && Math.abs(ddx * tfz - ddz * tfx) < 2.6) { queued = true; break; } }
+        const red = W.road.agentRed(ag);
+        const want = blocked ? Math.max(0, Math.abs(body.vf) - 1) : (queued || red) ? 0 : ag.speed;
+        t.spd = (t.spd == null ? ag.speed : t.spd) + (want - (t.spd == null ? ag.speed : t.spd)) * Math.min(1, (want < (t.spd || 0) ? 5 : 1.6) * dt); const target = t.spd;
         const stepSpeed = ag.speed; ag.speed = target; W.road.advanceAgent(ag, dt); ag.speed = stepSpeed;
         b.x += (ag.x - b.x) * Math.min(1, 10 * dt); b.z += (ag.z - b.z) * Math.min(1, 10 * dt);
         let dh = ag.h - b.h; while (dh > Math.PI) dh -= Math.PI * 2; while (dh < -Math.PI) dh += Math.PI * 2; b.h += dh * Math.min(1, 10 * dt);
@@ -624,6 +650,7 @@ function update(dt) {
       G.combo = physTime - G.lastStarT < 1.6 ? G.combo + got : 0; G.lastStarT = physTime;
       P.stars += got; Sound.ping(G.combo); vib(12); $('starnum').textContent = P.stars; const sc = $('starcount'); sc.classList.remove('pop'); void sc.offsetWidth; sc.classList.add('pop');
       for (let i = 0; i < got; i++) missionEvent('star');
+      G.starsRun = (G.starsRun || 0) + got; if (G.starsRun % 5 === 0 || (G.starsRun < 5 && got === 1)) Voice.say(`${NUM_WORDS[G.starsRun] || G.starsRun} ${G.starsRun === 1 ? 'star' : 'stars'}!`, { min: 1500 });
       for (const s of newStickers()) { toast('NEW STICKER!', `${s.e} ${s.n}`); Sound.fanfare(); }
     }
     const stepM = Math.max(0, body.vf) * dt; const kmh = Math.abs(body.vf) * 3.6;
@@ -646,7 +673,8 @@ function update(dt) {
     // ---- world upkeep
     if (isMap) { W.road.ensure(body.x, body.z); drawMiniMap(); if (W.road.tickLights && (G.frameN % 10 === 0)) W.road.tickLights(physTime, body.x, body.z); } else W.road.ensure(G.idx);
     W.follow(body.x, body.z, fx, fz);
-    speedEl.textContent = Math.round(Math.abs(body.vf) * 3.6);
+    const kmhI = Math.round(kmh); speedEl.textContent = kmhI;
+    gaugeArc.style.strokeDashoffset = (258 * (1 - Math.min(1, kmhI / (playerSpec.maxKmh || 300)))).toFixed(1);
     distEl.textContent = (G.dist / 1000).toFixed(1) + ' km';
 
     // ---- camera: 0 chase, 1 close chase, 2 bonnet
@@ -671,6 +699,7 @@ function update(dt) {
     G.shake = Math.max(0, G.shake - dt * 1.8);
     const sh = G.shake * 0.12 + sp * sp * 0.01 + (G.boosting ? 0.02 : 0);
     camera.position.x += (Math.random() - 0.5) * sh; camera.position.y += (Math.random() - 0.5) * sh;
+    if (G.lookAt) { camera.position.set(G.lookAt[2], G.lookAt[3], G.lookAt[4]); camLook.set(G.lookAt[0], 4, G.lookAt[1]); }   // screenshot helper (tests)
     camera.lookAt(camLook); camera.rotation.z += -body.yawRate * 0.04 * clamp(Math.abs(body.vf) / 20, 0, 1);
     Sound.update(Math.abs(body.vf), maxSpeed, !!body.throttle, G.boosting, body.vl, body.offRoad, dt);
   } else {
@@ -735,6 +764,7 @@ window.__kidcars = { G, P, settings, missions, state: () => state, hasCar, body:
   // test hooks
   addStarAhead: (n) => { const [fx, fz] = body.fwd(); for (let k = 0; k < n; k++) addStar(body.x + fx * (8 + k * 4), body.z + fz * (8 + k * 4), 'test'); },
   teleport: (x, z) => { body.x = x; body.z = z; body.vx = body.vz = 0; camera.position.set(x + Math.sin(body.h) * 8, 2.7, z + Math.cos(body.h) * 8); },
+  lookAt: (tx, tz, cx, cy, cz) => { G.lookAt = tx == null ? null : [tx, tz, cx, cy, cz]; },
   lockDbg: () => ({ held: lockHeld, heldFor: lockHeld ? Math.round(performance.now() - lockT0) : 0, state, lock: settings.lock, touches: Array.from(touches.values()), log: lockLog.slice() }),
   // Android back button: pause while driving, garage while paused, exit from the garage
-  back: () => { if (state === 'drive') { pauseGame(); return 'handled'; } if (state === 'pause') { toMenu(); return 'handled'; } if (!$('book').classList.contains('hidden')) { $('book').classList.add('hidden'); return 'handled'; } return 'exit'; } };
+  back: () => { if (state === 'dua') { hideDua(); state = 'menu'; menu.classList.remove('hidden'); return 'handled'; } if (state === 'drive') { pauseGame(); return 'handled'; } if (state === 'pause') { toMenu(); return 'handled'; } if (!$('book').classList.contains('hidden')) { $('book').classList.add('hidden'); return 'handled'; } return 'exit'; } };

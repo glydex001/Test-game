@@ -6,7 +6,7 @@ const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 // ------------------------------------------------------------------ progress (saved)
 const PKEY = 'kidcars-progress-v1';
-export const P = { stars: 0, missions: 0, deliveries: 0, km: 0, bestKmh: 0, boosts: 0, horns: 0, worlds: {}, cars: {}, nightKm: 0, photos: 0, stickers: {} };
+export const P = { stars: 0, missions: 0, deliveries: 0, km: 0, bestKmh: 0, boosts: 0, horns: 0, worlds: {}, cars: {}, nightKm: 0, photos: 0, duas: 0, masjids: 0, goodStops: 0, pads: 0, stickers: {} };
 try { Object.assign(P, JSON.parse(localStorage.getItem(PKEY) || '{}')); } catch (e) { /* ignore */ }
 export function saveP() { try { localStorage.setItem(PKEY, JSON.stringify(P)); } catch (e) { /* ignore */ } }
 
@@ -37,6 +37,10 @@ export const STICKERS = [
   { id: 'fast', e: '🏎️', n: 'Speed Demon', ok: () => P.bestKmh >= 400 },
   { id: 'horn', e: '📣', n: 'Beep Beep', ok: () => P.horns >= 20 },
   { id: 'photo', e: '📸', n: 'Photographer', ok: () => P.photos >= 1 },
+  { id: 'dua', e: '🤲', n: 'Bismillah', ok: () => (P.duas || 0) >= 5 },
+  { id: 'masjid', e: '🕌', n: 'Masjid Visitor', ok: () => (P.masjids || 0) >= 10 },
+  { id: 'stop', e: '🚦', n: 'Good Driver', ok: () => (P.goodStops || 0) >= 5 },
+  { id: 'pad', e: '⚡', n: 'Zoom Zoom', ok: () => (P.pads || 0) >= 10 },
 ];
 // returns stickers that have just been earned (and remembers them)
 export function newStickers() { const out = []; for (const s of STICKERS) if (!P.stickers[s.id] && s.ok()) { P.stickers[s.id] = 1; out.push(s); } if (out.length) saveP(); return out; }
@@ -131,7 +135,8 @@ export class Missions {
     let m = null;
     if (ctx.isMap) {
       const cycle = seq % 3;   // go somewhere, deliver a recliner, then something generic
-      if (cycle === 0) m = this.gotoMission(ctx);
+      if (cycle === 0 && seq % 9 === 6 && ctx.showroomAt) { const t = this.snap(ctx.road, ctx.showroomAt[0], ctx.showroomAt[1], true); const d = t ? Math.hypot(t[0] - ctx.x, t[1] - ctx.z) : 0; if (t && d > 300 && d < 7000) m = { kind: 'goto', icon: '🛋️', text: 'Drive to Glyde-X Recliners', target: [t[0], t[1]], poi: ctx.showroomAt, need: 1, have: 0, reward: 60 }; }
+      if (cycle === 0 && !m) m = this.gotoMission(ctx);
       else if (cycle === 1) m = this.deliverMission(ctx);
       if (!m) m = pick(generic)();
     } else m = generic[seq % generic.length]();
@@ -139,7 +144,7 @@ export class Missions {
     return m;
   }
   // snap a point to the nearest proper road so the target is reachable by car
-  snap(road, x, z) { const n = road.nearest(x, z, { skipMinor: true }); if (!n || n.d > 1e8 || n.d > 90) return null; return [n.px, n.pz, n.name]; }
+  snap(road, x, z, any) { let n = road.nearest(x, z, { skipMinor: true }); if (any && (!n || n.d > 60)) n = road.nearest(x, z); if (!n || n.d > 1e8 || n.d > 90) return null; return [n.px, n.pz, n.name]; }
   gotoMission(ctx) {
     const pois = ctx.road.data.pois.filter((p) => p.name && !SKIP_POI.test(p.k) && p.name.length < 34);
     const cand = pois.map((p) => ({ p, d: Math.hypot(p.c[0] - ctx.x, p.c[1] - ctx.z) })).filter((c) => c.d > 250 && c.d < 950);
@@ -151,17 +156,19 @@ export class Missions {
   }
   deliverMission(ctx) {
     if (!ctx.showroomAt) return null;
-    const pickup = this.snap(ctx.road, ctx.showroomAt[0], ctx.showroomAt[1]); if (!pickup) return null;
+    const pickup = this.snap(ctx.road, ctx.showroomAt[0], ctx.showroomAt[1], true); if (!pickup) return null;
     // a named residential street 300–900 m from the showroom
     const N = ctx.road.nodes; const cands = [];
     for (const r of ctx.road.roads) {
       if (!r.name || !/residential|living_street|unclassified/.test(r.t) || r.len < 80) continue;
-      const p = N[r.n[Math.floor(r.n.length / 2)]]; const d = Math.hypot(p[0] - pickup[0], p[1] - pickup[1]); if (d < 300 || d > 900) continue;
+      const p = N[r.n[Math.floor(r.n.length / 2)]]; const d = Math.hypot(p[0] - pickup[0], p[1] - pickup[1]); if (d < 300 || d > 3200) continue;
       cands.push({ r, p });
     }
     if (!cands.length) return null;
-    const { r, p } = pick(cands);
-    return { kind: 'deliver', icon: '🛋️', text: 'Pick up a recliner at Glyde-X', text2: `Deliver it to a house on ${r.name}`, target: [pickup[0], pickup[1]], target2: [p[0], p[1]], need: 2, have: 0, reward: 40 };
+    cands.sort((a, b) => Math.hypot(a.p[0] - pickup[0], a.p[1] - pickup[1]) - Math.hypot(b.p[0] - pickup[0], b.p[1] - pickup[1]));
+    const { r, p } = pick(cands.slice(0, Math.max(6, Math.ceil(cands.length / 4))));   // the nearer streets
+    const far = Math.hypot(pickup[0] - ctx.x, pickup[1] - ctx.z) > 2500;   // the real showroom is in Eikenhof: a long drive from Lenasia, so it pays more
+    return { kind: 'deliver', icon: '🛋️', text: far ? 'Drive to Glyde-X for a recliner' : 'Pick up a recliner at Glyde-X', text2: `Deliver it to a house on ${r.name}`, target: [pickup[0], pickup[1]], target2: [p[0], p[1]], need: 2, have: 0, reward: far ? 70 : 40 };
   }
   // game events: 'star', 'dist' (metres this frame), 'speed' (km/h), 'pass', 'boost', 'horn', 'hit', 'pos' ([x,z])
   event(type, v) {

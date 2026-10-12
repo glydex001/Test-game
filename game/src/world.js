@@ -82,6 +82,12 @@ export function createWorld(scene, renderer) {
     pool: new THREE.MeshBasicMaterial({ color: 0xffd58a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }),
   };
   { M.poolGeo = new THREE.CircleGeometry(5.5, 20); M.poolGeo.rotateX(-Math.PI / 2); M.poolGeo.translate(2.0, 0.06, 0); }
+  // boost pads: three glowing chevrons painted on the road (points along -Z, the direction of travel)
+  { const c = document.createElement('canvas'); c.width = 128; c.height = 192; const x = c.getContext('2d'); x.clearRect(0, 0, 128, 192);
+    for (let k = 0; k < 3; k++) { const y0 = 150 - k * 52; x.fillStyle = k === 2 ? '#fff6c8' : '#ffd64a'; x.beginPath(); x.moveTo(12, y0); x.lineTo(64, y0 - 42); x.lineTo(116, y0); x.lineTo(116, y0 - 22); x.lineTo(64, y0 - 64); x.lineTo(12, y0 - 22); x.closePath(); x.fill(); }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    M.pad = new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, fog: false, opacity: 0.95 });
+    M.padGeo = new THREE.PlaneGeometry(3.2, 4.8); M.padGeo.rotateX(-Math.PI / 2); }
   // soft radial falloff for the lamp pools
   { const cv = document.createElement('canvas'); cv.width = cv.height = 128; const x = cv.getContext('2d'); const gr = x.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, 128, 128); M.pool.map = new THREE.CanvasTexture(cv); M.pool.alphaMap = M.pool.map; }
   // lamp post geometry: pole + arm pointing to +x
@@ -174,7 +180,7 @@ export function createWorld(scene, renderer) {
   const roofTileMat = std({ map: roofTex, roughness: 0.9, metalness: 0 }); roofTex.repeat.set(2, 2);
   W.worlds.lenasia = { ground: 'grass', tile: 7, groundTint: 0xb7ad78, shoulder: 'sand', shoulderTint: 0xffffff, backdrop: 'hills_green', backdropH: 38, map: 'lenasia.json',
     fog: { day: 0xd6dde6, sunset: 0xe9b48a, night: 0x0a0f1e }, fogFar: 520, offroadGrip: 0.55,
-    scatter: [], tex, fMats, fMatsHouse, wallMat, roofTileMat, makeBuilding, treeStyles: null, start: [-743, -2581], showroomAt: null,
+    scatter: [], tex, fMats, fMatsHouse, wallMat, roofTileMat, makeBuilding, treeStyles: null, start: [-3567, -4324], showroomReal: [3852, -967], showroomAt: null,   // start: Engen, Flamingo Street · showroom: 1B Louis Industrial Rd, Eikenhof
     lenMats, palisadeMat, jacaranda, palm };
   for (const k in W.worlds) W.worlds[k].mats = M;
   W.worlds.lenasia.treeStyles = { oakTree, pineTree };
@@ -194,7 +200,8 @@ export function createWorld(scene, renderer) {
         // start just off the mall on the nearest road; showroom 70 m along it on the left
         const ow = new OsmWorld(scene, w, data);
         const sp = ow.startPose(); const n = ow.nearest(sp.x, sp.z, { skipMinor: true }); const fx = -Math.sin(n.h), fz = -Math.cos(n.h), lx = fz, lz = -fx;
-        w.showroomAt = [n.px + fx * 70 + lx * (n.w / 2 + 12), n.pz + fz * 70 + lz * (n.w / 2 + 12), n.h + Math.PI / 2];
+        if (w.showroomReal) { const [rx, rz] = w.showroomReal; const n2 = ow.nearest(rx, rz); const yaw = n2.px != null ? Math.atan2(n2.px - rx, n2.pz - rz) : 0; w.showroomAt = [rx, rz, yaw]; }
+        else w.showroomAt = [n.px + fx * 70 + lx * (n.w / 2 + 12), n.pz + fz * 70 + lz * (n.w / 2 + 12), n.h + Math.PI / 2];
         W.road = ow; W.loading = false;
       };
       if (W.mapData[w.map]) make(W.mapData[w.map]);

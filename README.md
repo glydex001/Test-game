@@ -23,7 +23,15 @@ Download the newest `GlydeXRacing-v1.N.apk` from the Releases page onto the phon
 - ❚❚ pauses (also the phone's back button); switching apps pauses automatically.
 - Lenasia mode is a free-roam map of the real suburb built from OpenStreetMap data (`app/src/main/assets/www/lenasia.json`,
   made by `game/tools/osm2map.mjs` from an OSM export) with every real building outline from satellite data (`lenasia-bld.json`).
-  You start next to Trade Route Mall; the mini-map shows streets and landmarks.
+  You start at the Engen garage on Flamingo Street; the mini-map shows streets and landmarks. The Glyde-X showroom stands
+  at its real address (1B Louis Industrial Road, Eikenhof), and the masjids, mall entrances and big double-storey houses are
+  real 3D models placed on their footprints.
+- Islamic touches: the travel dua (with Bismillah) is shown before every drive — tap **Bismillah** to go; "Assalamu alaikum"
+  when you pass a masjid; "Alhamdulillah" when a mission is done.
+- Learning for a 5-year-old (🗣️ voice can be switched off in the garage): the phone reads out car names, colours, street names,
+  counts the stars, each mission teaches a letter ("M is for Masjid"), and traffic lights teach red = STOP / green = GO
+  (a proper stop at a red light earns 5 stars; traffic cars stop at red lights too).
+- Boost pads: drive over the glowing ⚡ arrows on the road for a zoom.
 
 ## Testing
 
@@ -52,7 +60,7 @@ Car models (CC-BY / MIT, used with attribution):
 - Ferrari 599 GTO — Black Snow on Sketchfab (CC-BY 4.0)
 - Nissan GT-R R35 — Ciasny on Sketchfab (CC-BY 4.0)
 
-Textures and backdrops generated with Higgsfield. Built with three.js.
+Textures, backdrops and the Lenasia landmark 3D models (masjid, mall entrance, double-storey house, Glyde-X showroom) generated with Higgsfield (nano_banana references → SAM 3 3D), prepared with `game/tools/prep-landmarks.mjs`. Built with three.js.
 Lenasia street furniture (traffic lights, stop signs, humps, street names) and suburb boundaries come from OpenStreetMap tags.
 Map data © OpenStreetMap contributors, ODbL.
 Building footprints in Lenasia from the Google Open Buildings dataset (CC BY 4.0), clipped with `game/tools/clip-buildings.py`.

@@ -20,6 +20,8 @@ import android.widget.Toast;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
+import java.util.Locale;
+import android.speech.tts.TextToSpeech;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
@@ -30,6 +32,7 @@ import androidx.webkit.WebViewAssetLoader;
 /** Full-screen WebView that runs the game from the bundled assets (served over a secure origin). */
 public class MainActivity extends AppCompatActivity {
     private WebView web;
+    private TextToSpeech tts; private boolean ttsReady = false; private boolean ttsArabic = false;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -65,12 +68,32 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         web.addJavascriptInterface(new Bridge(), "Android");
+        tts = new TextToSpeech(this, status -> {
+            if (status != TextToSpeech.SUCCESS) return;
+            ttsReady = true;
+            try { tts.setLanguage(Locale.UK); tts.setSpeechRate(0.9f); } catch (Exception ignored) {}
+            try { int r = tts.isLanguageAvailable(new Locale("ar")); ttsArabic = r >= TextToSpeech.LANG_AVAILABLE; } catch (Exception ignored) {}
+        });
         web.loadUrl("https://appassets.androidplatform.net/assets/www/index.html");
         hideSystemBars();
     }
 
     /** Small bridge for the game: save a photo (JPEG, base64) to the phone's Pictures/Glyde-X Racing album. */
     private class Bridge {
+        /** Speak a short line (kid narration). lang: "en" or "ar" (Arabic only if the phone has an Arabic voice). */
+        @JavascriptInterface
+        public boolean speak(String text, String lang) {
+            if (!ttsReady || text == null || text.isEmpty()) return false;
+            try {
+                if ("ar".equals(lang)) { if (!ttsArabic) return false; tts.setLanguage(new Locale("ar")); } else tts.setLanguage(Locale.UK);
+                tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "kc" + System.currentTimeMillis());
+                return true;
+            } catch (Exception e) { return false; }
+        }
+        @JavascriptInterface
+        public boolean canSpeak(String lang) { return ttsReady && (!"ar".equals(lang) || ttsArabic); }
+        @JavascriptInterface
+        public void stopSpeaking() { try { if (tts != null) tts.stop(); } catch (Exception ignored) {} }
         @JavascriptInterface
         public boolean savePhoto(String base64) {
             try {
@@ -112,7 +135,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onPause() { super.onPause(); if (web != null) web.onPause(); }
+    protected void onPause() { super.onPause(); if (web != null) web.onPause(); if (tts != null) tts.stop(); }
+
+    @Override
+    protected void onDestroy() { if (tts != null) { tts.stop(); tts.shutdown(); } super.onDestroy(); }
 
     @Override
     protected void onResume() { super.onResume(); if (web != null) web.onResume(); hideSystemBars(); }
