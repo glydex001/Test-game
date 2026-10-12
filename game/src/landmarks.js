@@ -12,6 +12,11 @@ export const LANDMARKS = {
   mall: { w: 1, h: 0.31, d: 0.602 },
   house: { w: 1, h: 0.618, d: 0.739 },
   showroom: { w: 1, h: 0.457, d: 0.98 },
+  school: { w: 1, h: 0.27, d: 0.518 },
+  engen: { w: 1, h: 0.552, d: 1.017 },
+  temple: { w: 1, h: 1.101, d: 1.112 },
+  church: { w: 1, h: 1.408, d: 1.747 },
+  bigmall: { w: 1, h: 0.236, d: 0.834 },
 };
 const protos = {}; let pending = null;
 export const hasLandmark = (id) => !!protos[id];

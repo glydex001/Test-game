@@ -88,6 +88,12 @@ export function createWorld(scene, renderer) {
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
     M.pad = new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, fog: false, opacity: 0.95 });
     M.padGeo = new THREE.PlaneGeometry(3.2, 4.8); M.padGeo.rotateX(-Math.PI / 2); }
+  // jump ramp: a wedge 6 m long, 3.4 m wide, rising to 1.1 m (you drive up it along -Z)
+  { const L = 6, W2 = 1.7, H = 1.1; const v = [[-W2, 0, 0], [W2, 0, 0], [W2, H, -L], [-W2, H, -L], [-W2, 0, -L], [W2, 0, -L]]; const pos = [];
+    const tri = (a, b, c) => { for (const k of [a, b, c]) pos.push(...v[k]); };
+    tri(0, 2, 1); tri(0, 3, 2); tri(0, 4, 3); tri(1, 2, 5); tri(3, 4, 5); tri(3, 5, 2);
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals();
+    M.rampGeo = g; M.ramp = new THREE.MeshStandardMaterial({ color: 0xf5c518, roughness: 0.5, metalness: 0.2, side: THREE.DoubleSide }); }
   // soft radial falloff for the lamp pools
   { const cv = document.createElement('canvas'); cv.width = cv.height = 128; const x = cv.getContext('2d'); const gr = x.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, 128, 128); M.pool.map = new THREE.CanvasTexture(cv); M.pool.alphaMap = M.pool.map; }
   // lamp post geometry: pole + arm pointing to +x
@@ -172,7 +178,7 @@ export function createWorld(scene, renderer) {
   const fMatsHouse = std({ map: houseTex, roughness: 0.9, metalness: 0 });
   // Lenasia facades (generated from reference descriptions of the suburb): keyed by style name
   const fac = (name, rough = 0.85) => { const t = tex(name, { mirror: true }); return std({ map: t, emissiveMap: t, emissive: 0xffffff, emissiveIntensity: 0, roughness: rough, metalness: 0 }); };
-  const lenMats = { brick: fac('house_brick'), arch: fac('house_arch'), modern: fac('house_modern', 0.6), flats: fac('flats_block'), shops: fac('shops_row'), mall: fac('mall_facade', 0.6), mosque: fac('mosque_wall') };
+  const lenMats = { brick: fac('house_brick'), arch: fac('house_arch'), modern: fac('house_modern', 0.6), white: fac('house_white'), blue: fac('house_blue'), grey: fac('house_grey', 0.6), peach: fac('house_peach'), flats: fac('flats_block'), shops: fac('shops_row'), mall: fac('mall_facade', 0.6), mosque: fac('mosque_wall') };
   const palisadeMat = std({ map: tex('palisade', { mirror: true }), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.6 });
   const jacaranda = cutoutParts('tree_jacaranda', 9, 768 / 544, { sink: 0.1 });
   const palm = cutoutParts('tree_palm', 11, 364 / 991);

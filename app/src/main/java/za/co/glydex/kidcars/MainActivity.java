@@ -135,7 +135,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onPause() { super.onPause(); if (web != null) web.onPause(); if (tts != null) tts.stop(); }
+    protected void onPause() { super.onPause(); if (web != null) { web.evaluateJavascript("window.__kidcars && window.__kidcars.sleep && window.__kidcars.sleep();", null); web.onPause(); } if (tts != null) tts.stop(); }
 
     @Override
     protected void onDestroy() { if (tts != null) { tts.stop(); tts.shutdown(); } super.onDestroy(); }

@@ -31,7 +31,12 @@ Download the newest `GlydeXRacing-v1.N.apk` from the Releases page onto the phon
 - Learning for a 5-year-old (🗣️ voice can be switched off in the garage): the phone reads out car names, colours, street names,
   counts the stars, each mission teaches a letter ("M is for Masjid"), and traffic lights teach red = STOP / green = GO
   (a proper stop at a red light earns 5 stars; traffic cars stop at red lights too).
-- Boost pads: drive over the glowing ⚡ arrows on the road for a zoom.
+- Boost pads: drive over the glowing ⚡ arrows on the road for a zoom. Yellow jump ramps on the open roads (country / desert / city / snow).
+- Lenasia missions stay close by (150–650 m): drive to a place, fetch a recliner from the Glyde-X van and deliver it, take a photo at a
+  landmark, collect the stars on a street, a timed dash — with floating gold arrows along the streets (and a gold line on the mini-map)
+  that lead the way. Honk near a car and it beeps back and hurries off.
+- Landmark 3D models: masjids, mall entrances, schools, temples, churches, petrol stations, the big double-storey houses and the
+  Glyde-X showroom; seven house facade looks.
 
 ## Testing
 
@@ -60,7 +65,7 @@ Car models (CC-BY / MIT, used with attribution):
 - Ferrari 599 GTO — Black Snow on Sketchfab (CC-BY 4.0)
 - Nissan GT-R R35 — Ciasny on Sketchfab (CC-BY 4.0)
 
-Textures, backdrops and the Lenasia landmark 3D models (masjid, mall entrance, double-storey house, Glyde-X showroom) generated with Higgsfield (nano_banana references → SAM 3 3D), prepared with `game/tools/prep-landmarks.mjs`. Built with three.js.
+Textures, backdrops and the Lenasia landmark 3D models (masjid, mall entrances, school, temple, church, petrol station, double-storey house, Glyde-X showroom) generated with Higgsfield (nano_banana references → SAM 3 3D), prepared with `game/tools/prep-landmarks.mjs`. Built with three.js.
 Lenasia street furniture (traffic lights, stop signs, humps, street names) and suburb boundaries come from OpenStreetMap tags.
 Map data © OpenStreetMap contributors, ODbL.
 Building footprints in Lenasia from the Google Open Buildings dataset (CC BY 4.0), clipped with `game/tools/clip-buildings.py`.

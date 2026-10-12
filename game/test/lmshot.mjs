@@ -16,9 +16,9 @@ await page.waitForTimeout(1500);
 for (const [name, tx, tz, cx, cy, cz, raw] of spots) {
   await page.evaluate(([tx, tz, cx, cy, cz, raw]) => { const K = window.__kidcars; const n = raw ? {} : K.world().road.nearest(cx, cz); const px = n.px != null ? n.px : cx, pz = n.px != null ? n.pz : cz; K.teleport(px, pz); K.lookAt(tx, tz, px, cy, pz); console.log('cam', px | 0, pz | 0); }, [tx, tz, cx, cy, cz, raw]);
   await page.waitForTimeout(4000);
-  await page.evaluate(() => { const W = window.__kidcars.world(); const b = window.__kidcars.body(); for (let k = 0; k < 12; k++) W.road.ensure(b.x, b.z); });
+  await page.evaluate(() => { const W = window.__kidcars.world(); const b = window.__kidcars.body(); W.road.finishTiles ? W.road.finishTiles(b.x, b.z) : W.road.ensure(b.x, b.z); });
   await page.waitForTimeout(1500);
   await page.screenshot({ path: `shots/lm-${name}.png`, timeout: 150000 });
-  console.log('shot', name);
+  console.log('shot', name, JSON.stringify(await page.evaluate(() => { const W = window.__kidcars.world().road; return { steps: W.stepN, maxMs: +(W.stepMax || 0).toFixed(1), avgMs: +((W.stepSum || 0) / (W.stepN || 1)).toFixed(1), by: W.stepBy }; })));
 }
 await browser.close(); server.close();

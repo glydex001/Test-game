@@ -227,6 +227,9 @@ export class ProceduralRoad {
     // a boost pad every 2nd chunk, in a random lane
     const pads = [];
     if (ci > 0 && ci % 2 === 0 && M.padGeo) { const s = rand(s0 + 40, s1 - 40); const lane = LANES[Math.floor(rand(0, 3))]; const p = this.pointAt(s); const pm = new THREE.Mesh(M.padGeo, M.pad); pm.position.set(p.x + p.rx * lane, 0.1, p.z + p.rz * lane); pm.rotation.y = p.h; pm.userData.shared = true; pm.renderOrder = 1; g.add(pm); pads.push({ x: pm.position.x, z: pm.position.z, fx: p.fx, fz: p.fz }); }
+    // a jump ramp every 4th chunk, in a random lane (yellow wedge; drive up it fast to fly)
+    const ramps = [];
+    if (ci > 1 && ci % 4 === 3 && M.rampGeo) { const s = rand(s0 + 50, s1 - 50); const lane = LANES[Math.floor(rand(0, 3))]; const p = this.pointAt(s); const rm = new THREE.Mesh(M.rampGeo, M.ramp); rm.position.set(p.x + p.rx * lane, 0.02, p.z + p.rz * lane); rm.rotation.y = p.h; rm.castShadow = true; rm.userData.shared = true; g.add(rm); ramps.push({ x: rm.position.x, z: rm.position.z, fx: p.fx, fz: p.fz }); }
     // Glyde-X billboards: three per chunk (alternating sides, different designs) + a gantry sign every 2nd chunk
     {
       const slots = [[s0 + 20, s0 + 90], [s0 + 100, s0 + 170], [s0 + 180, s1 - 20]];
@@ -279,7 +282,12 @@ export class ProceduralRoad {
       lamps.count = k; glows.count = k; pools.count = k; pools.renderOrder = 2; g.add(lamps, glows, pools, banners);
     }
     this.group.add(g);
-    return { ci, i0, i1, group: g, obstacles, pads };
+    return { ci, i0, i1, group: g, obstacles, pads, ramps };
+  }
+  // jump ramp under the car? returns { ramp, t } with t = 0..1 up the slope
+  rampAt(x, z) {
+    for (const ch of this.chunks.values()) for (const p of (ch.ramps || [])) { const dx = x - p.x, dz = z - p.z; if (dx * dx + dz * dz > 64) continue; const along = dx * p.fx + dz * p.fz, side = dx * p.fz - dz * p.fx; if (along > -0.5 && along < 6.5 && Math.abs(side) < 1.7) return { ramp: p, t: Math.max(0, Math.min(1, along / 6)) }; }
+    return null;
   }
   // boost pad under the car?
   padAt(x, z) {

@@ -6,6 +6,7 @@ import { CARS, hasCar, instantiate, disposeInstance } from './cars.js';
 import { loadLandmarks, hasLandmark, landmarkInstances, fitLandmark, LANDMARKS } from './landmarks.js';
 
 const TILE = 400;
+const ONE = ['arch', 'white', 'blue', 'brick', 'modern', 'white', 'arch'], TWO = ['brick', 'grey', 'peach', 'brick', 'peach'];   // single- / double-storey house looks
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1), _m = new THREE.Matrix4(), _e = new THREE.Euler();
@@ -90,6 +91,35 @@ export class OsmWorld {
     const r = this.roads[best.r];
     best.h = Math.atan2(-best.ex, -best.ez); best.onRoad = best.d <= r.w / 2 + 0.9; best.name = r.name; best.type = r.t;
     return best;
+  }
+
+  // ---------------------------------------------------------------- routing (A* over the road graph, for the guide arrows)
+  route(x0, z0, x1, z1) {
+    const a = this.nearest(x0, z0), b = this.nearest(x1, z1); if (a.d > 1e8 || b.d > 1e8) return null;
+    const N = this.nodes; const ra = this.roads[a.r], rb = this.roads[b.r];
+    if (a.r === b.r && a.i === b.i) return [[a.px, a.pz], [b.px, b.pz]];
+    const goal = new Map(); goal.set(rb.n[b.i + 1], Math.hypot(N[rb.n[b.i + 1]][0] - b.px, N[rb.n[b.i + 1]][1] - b.pz)); if (!rb.one) goal.set(rb.n[b.i], Math.hypot(N[rb.n[b.i]][0] - b.px, N[rb.n[b.i]][1] - b.pz));
+    const h = (ni) => Math.hypot(N[ni][0] - b.px, N[ni][1] - b.pz);
+    const dist = new Map(), prev = new Map(); const heap = [];
+    const push = (ni, d) => { let i = heap.length; heap.push([d + h(ni), ni, d]); while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+    const pop = () => { const top = heap[0]; const last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    const relax = (u, v, w) => { const nd = dist.get(u) + w; if (nd < (dist.has(v) ? dist.get(v) : Infinity)) { dist.set(v, nd); prev.set(v, u); push(v, nd); } };
+    const cost = (r, len) => len * (r.t === 'service' ? 1.8 : r.t === 'living_street' ? 1.2 : 1);
+    const s1 = ra.n[a.i + 1], s0 = ra.n[a.i]; dist.set(s1, Math.hypot(N[s1][0] - a.px, N[s1][1] - a.pz)); push(s1, dist.get(s1)); if (!ra.one) { dist.set(s0, Math.hypot(N[s0][0] - a.px, N[s0][1] - a.pz)); push(s0, dist.get(s0)); }
+    const done = new Set(); let end = null; let iter = 0;
+    while (heap.length && iter++ < 60000) {
+      const [, u, d] = pop(); if (done.has(u)) continue; done.add(u);
+      if (goal.has(u)) { end = u; break; }
+      for (const [ri, k] of (this.nodeRoads.get(u) || [])) {
+        const r = this.roads[ri]; if (r.t === 'track') continue;
+        if (k < r.n.length - 1) relax(u, r.n[k + 1], cost(r, r.seg[k]));
+        if (k > 0 && !r.one) relax(u, r.n[k - 1], cost(r, r.seg[k - 1]));
+      }
+      void d;
+    }
+    if (end == null) return null;
+    const pts = [[b.px, b.pz]]; for (let u = end; u != null; u = prev.get(u)) pts.push([N[u][0], N[u][1]]); pts.push([a.px, a.pz]); pts.reverse();
+    return pts;
   }
 
   // ---------------------------------------------------------------- materials
@@ -211,6 +241,13 @@ export class OsmWorld {
     return best;
   }
   headState(q, t) { const cyc = t % 24; const ph = (cyc + (q.node % 7)) % 24; const mine = q.axis === 0 ? ph : (ph + 12) % 24; return mine < 8 ? 'g' : mine < 10 ? 'a' : 'r'; }
+  nearFuel(x, z, dist) { if (!this.fuelPois) this.fuelPois = this.data.pois.filter((p) => p.k === 'fuel'); for (const p of this.fuelPois) if (Math.hypot(p.c[0] - x, p.c[1] - z) < dist) return true; return false; }
+  // inside a school ground (amenity=school area)?
+  inSchool(x, z) {
+    if (!this.schoolAreas) this.schoolAreas = this.data.areas.filter((a) => a.k === 'school').map((a) => ({ p: a.p, bb: bboxOf(a.p) }));
+    for (const a of this.schoolAreas) { if (x < a.bb[0] || x > a.bb[2] || z < a.bb[1] || z > a.bb[3]) continue; if (pointInPoly(x, z, a.p)) return true; }
+    return false;
+  }
   // nearest masjid (by name) within dist, for the greeting
   masjidNear(x, z, dist) {
     if (!this.masjids) this.masjids = this.data.buildings.filter((b) => b.rel === 'muslim' || /masjid|mosque/i.test(b.name || '')).map((b) => ({ c: b.c, name: b.name && !/place_of_worship/.test(b.name) ? b.name : 'Masjid' }));
@@ -271,16 +308,25 @@ export class OsmWorld {
   }
 
   // ---------------------------------------------------------------- tiles
-  ensure(x, z) {
+  ensure(x, z, all) {
     const tx = Math.floor(x / TILE), tz = Math.floor(z / TILE); const R = 2;
     for (const [tk, t] of this.tiles) if (Math.abs(t.tx - tx) > R + 1 || Math.abs(t.tz - tz) > R + 1) { this.disposeTile(t); this.tiles.delete(tk); }
     let built = 0;
     for (let dx = -R; dx <= R; dx++) for (let dz = -R; dz <= R; dz++) {
-      if (built >= 1 && (Math.abs(dx) > 1 || Math.abs(dz) > 1)) continue;   // spread the work over frames
+      if (built >= 1 && (Math.abs(dx) > 1 || Math.abs(dz) > 1) && !all) continue;   // spread the work over frames
       const tk = this.key(tx + dx, tz + dz); if (this.tiles.has(tk)) continue;
       this.tiles.set(tk, this.buildTile(tx + dx, tz + dz, tk)); built++;
     }
+    // then one build step per frame, nearest unfinished tile first (all of them when `all` is set, e.g. for a teleport)
+    const pend = []; for (const t of this.tiles.values()) if (t.steps.length) pend.push(t);
+    if (!pend.length) return;
+    pend.sort((a, b) => (Math.abs(a.tx - tx) + Math.abs(a.tz - tz)) - (Math.abs(b.tx - tx) + Math.abs(b.tz - tz)));
+    // a time budget per frame (always at least one step); unlimited when finishing everything
+    const budgetMs = all ? 1e9 : 6; const start = performance.now(); let n = 0;
+    for (const t of pend) { while (t.steps.length && (n === 0 || performance.now() - start < budgetMs)) { const st = t.steps.shift(); this.lm = t.lm; const t0 = performance.now(); st(); const ms = performance.now() - t0; this.stepMax = Math.max(this.stepMax || 0, ms); this.stepBy = this.stepBy || {}; this.stepBy[st.label || '?'] = Math.max(this.stepBy[st.label || '?'] || 0, ms); this.stepN = (this.stepN || 0) + 1; this.stepSum = (this.stepSum || 0) + ms; n++; } if (n && performance.now() - start >= budgetMs) break; }
   }
+  // finish every pending build step now (teleports, screenshots)
+  finishTiles(x, z) { this.ensure(x, z, true); }
   obstaclesNear(x, z) {
     const out = []; const tx = Math.floor(x / TILE), tz = Math.floor(z / TILE);
     for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) { const t = this.tiles.get(this.key(tx + dx, tz + dz)); if (t) for (const o of t.obstacles) if (Math.abs(o.x - x) < 60 && Math.abs(o.z - z) < 60) out.push(o); }
@@ -298,8 +344,10 @@ export class OsmWorld {
   buildTile(tx, tz, tk) {
     const g = new THREE.Group(); const obstacles = []; const N = this.nodes; this.lm = [];
     const x0 = tx * TILE, z0 = tz * TILE;
+    // The tile is assembled in steps (one step per frame) so a dense tile never stalls a frame for 100+ ms.
+    const t = { tx, tz, group: g, obstacles, roads: null, areas: this.tileAreas.get(tk) || [], humps: [], pads: [], parked: [], steps: [], lm: this.lm };
     // roads (shared meshes, refcounted)
-    const roads = this.tileRoads.get(tk) || [];
+    const roads = this.tileRoads.get(tk) || []; t.roads = roads;
     for (const ri of roads) { let rm = this.roadMeshes.get(ri); if (!rm) { rm = { refs: 0, mesh: this.buildRoad(ri) }; this.roadMeshes.set(ri, rm); this.group.add(rm.mesh); } rm.refs++; }
     // junction discs for nodes in this tile
     const discs = [];
@@ -308,10 +356,10 @@ export class OsmWorld {
     // areas (parks, water, pitches, ...)
     for (const ai of (this.tileAreas.get(tk) || [])) { let am = this.areaMeshes.get(ai); if (!am) { const mesh = this.buildArea(ai); if (!mesh) continue; am = { refs: 0, mesh }; this.areaMeshes.set(ai, am); this.group.add(mesh); } am.refs++; }
     // car parks: painted bays + a few parked cars
-    const parked = [];
-    for (const ai of (this.tileAreas.get(tk) || [])) {
-      const a = this.data.areas[ai]; if (a.k !== 'park_lot') continue; const c = centroid(a.p); if (c[0] < x0 || c[0] >= x0 + TILE || c[1] < z0 || c[1] >= z0 + TILE) continue;
-      const ob = obbOf(a.p); if (ob.hw < 8 || ob.hl < 6) continue;
+    const parked = t.parked;
+    for (const ai of (this.tileAreas.get(tk) || [])) t.steps.push(Object.assign(() => {
+      const a = this.data.areas[ai]; if (a.k !== 'park_lot') return; const c = centroid(a.p); if (c[0] < x0 || c[0] >= x0 + TILE || c[1] < z0 || c[1] >= z0 + TILE) return;
+      const ob = obbOf(a.p); if (ob.hw < 8 || ob.hl < 6) return;
       const long = ob.hw >= ob.hl; const ux = Math.cos(ob.h) * (long ? 1 : 0) + -Math.sin(ob.h) * (long ? 0 : 1), uz = -Math.sin(ob.h) * (long ? 1 : 0) + -Math.cos(ob.h) * (long ? 0 : 1);   // along the long axis
       const vx = -uz, vz = ux; const half = long ? ob.hw : ob.hl, halfS = long ? ob.hl : ob.hw;
       const rows = Math.max(1, Math.min(4, Math.floor(halfS * 2 / 16))); const geos = []; let nCar = 0;
@@ -325,17 +373,19 @@ export class OsmWorld {
         }
       }
       if (geos.length) { const bays = new THREE.Mesh(mergeGeos(geos), this.mat.stripe); g.add(bays); }
-    }
+    }, { label: 'parks' }));
     // petrol stations
-    for (const p of (this.tilePois.get(tk) || [])) if (p.k === 'fuel' && !this.nearBuilding(p.c[0], p.c[1], 6)) this.buildFuel(p, g, obstacles);
-    // mapped buildings
-    for (const bi of (this.tileBuildings.get(tk) || [])) { const b = this.data.buildings[bi]; const mesh = this.buildBuilding(b); if (!mesh) continue; g.add(mesh); const ob = obbOf(b.p); obstacles.push({ type: 'box', ...ob }); }
+    t.steps.push(Object.assign(() => { for (const p of (this.tilePois.get(tk) || [])) if (p.k === 'fuel' && (hasLandmark('engen') || !this.nearBuilding(p.c[0], p.c[1], 6))) this.buildFuel(p, g, obstacles); }, { label: 'fuel' }));
+    // mapped buildings (a few per step)
+    { const list = this.tileBuildings.get(tk) || [];
+      for (let i = 0; i < list.length; i += 8) { const part = list.slice(i, i + 8); t.steps.push(Object.assign(() => { for (const bi of part) { const b = this.data.buildings[bi]; const mesh = this.buildBuilding(b); if (!mesh) continue; g.add(mesh); const ob = obbOf(b.p); obstacles.push({ type: 'box', ...ob }); } }, { label: 'osm' })); } }
     // procedural houses along residential streets + street trees
     const houses = [], trees = [], jacs = [], palms = [];
     const gbHere = this.tileGB.get(tk) || []; const useGB = gbHere.length > 0;
-    if (useGB) this.buildGB(gbHere, g, obstacles, houses);
-    for (const ri of roads) {
-      const r = this.roads[ri]; if (!/residential|unclassified|living_street/.test(r.t)) continue;
+    for (let i = 0; i < gbHere.length; i += 60) { const part = gbHere.slice(i, i + 60); t.steps.push(Object.assign(() => this.buildGB(part, g, obstacles, houses), { label: 'gb' })); }
+    for (const ri of roads) t.steps.push(Object.assign(() => {
+    {
+      const r = this.roads[ri]; if (!/residential|unclassified|living_street/.test(r.t)) return;
       const step = 21; let acc = 10, seq = 0;
       for (let i = 0; i < r.n.length - 1; i++) {
         const a = N[r.n[i]], b = N[r.n[i + 1]]; const L = r.seg[i]; const ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L; const rx = -uz, rz = ux;
@@ -349,7 +399,7 @@ export class OsmWorld {
               const bx = px + rx * side * (r.w / 2 + 10), bz = pz + rz * side * (r.w / 2 + 10);
               if (!this.gbNear(bx, bz, 14)) continue;
               const woff = r.w / 2 + 2.2; const wx = px + rx * side * woff, wz = pz + rz * side * woff; const gapAt = (hash(ri, seq, 23) - 0.5) * 8; const palisade = hash(ri, seq, 47) < 0.45;
-              for (const wo of [gapAt - 5.5, gapAt + 5.5]) { const cxw = wx + ux * wo, czw = wz + uz * wo; let clear = true; for (const e of [-3.75, 0, 3.75]) { const q = this.nearest(cxw + ux * e, czw + uz * e, { exclude: ri }); if (q.d < q.w / 2 + 2.5) { clear = false; break; } } if (!clear) continue; houses.push({ wall: true, palisade, x: cxw, z: czw, yaw: Math.atan2(-ux, -uz) + (side === 1 ? Math.PI : 0), len: 7.5 }); obstacles.push({ type: 'box', x: cxw, z: czw, hw: 0.15, hl: 3.75, h: Math.atan2(-ux, -uz) + (side === 1 ? Math.PI : 0) }); }
+              for (const wo of [gapAt - 5.5, gapAt + 5.5]) { const cxw = wx + ux * wo, czw = wz + uz * wo; let clear = true; for (const e of [-3.75, -1.9, 0, 1.9, 3.75]) { const q = this.nearest(cxw + ux * e, czw + uz * e); if (q.d < q.w / 2 + 1.6) { clear = false; break; } } /* never on any road (own road's bends included) */ if (!clear) continue; houses.push({ wall: true, palisade, x: cxw, z: czw, yaw: Math.atan2(-ux, -uz) + (side === 1 ? Math.PI : 0), len: 7.5 }); obstacles.push({ type: 'box', x: cxw, z: czw, hw: 0.15, hl: 3.75, h: Math.atan2(-ux, -uz) + (side === 1 ? Math.PI : 0) }); }
               if (hash(ri, seq, 29) < 0.35) { const tx2 = px + rx * side * (r.w / 2 + 1.1) + ux * 6, tz2 = pz + rz * side * (r.w / 2 + 1.1) + uz * 6; if (this.nearest(tx2, tz2, { exclude: ri }).d > 3) { (hash(ri, seq, 53) < 0.5 ? jacs : trees).push({ x: tx2, z: tz2, scale: 0.6 + hash(ri, seq, 31) * 0.5, rot: hash(ri, seq, 37) * 6.28 }); obstacles.push({ type: 'circle', x: tx2, z: tz2, r: 0.4 }); } }
               continue;
             }
@@ -361,10 +411,9 @@ export class OsmWorld {
             if (this.nearBuilding(hx, hz, 14)) continue;
             const yaw = Math.atan2(-ux, -uz) + (side === 1 ? Math.PI : 0);
             // style: Lenasia mix — face brick double storeys, plastered single storeys with arches, modern plaster
-            const sr = hash(ri, seq, 41); const style = sr < 0.38 ? 'arch' : sr < 0.72 ? 'brick' : 'modern';
-            const two = style !== 'arch' ? hash(ri, seq, 43) < 0.75 : hash(ri, seq, 43) < 0.12;
+            const sr = hash(ri, seq, 41); const two = hash(ri, seq, 43) < 0.5; const style = two ? TWO[Math.floor(sr * TWO.length)] : ONE[Math.floor(sr * ONE.length)];
             const hw = 5.5 + hash(ri, seq, 11) * 1.8, hd = 4.5 + hash(ri, seq, 13) * 1.4; const hh = (two ? 6.3 : 3.3) + hash(ri, seq, 17) * 0.4;
-            houses.push({ x: hx, z: hz, yaw, hw, hd, hh, style, flat: style === 'modern' });
+            houses.push({ x: hx, z: hz, yaw, hw, hd, hh, style, flat: style === 'modern' || style === 'grey' || style === 'peach' });
             obstacles.push({ type: 'box', x: hx, z: hz, hw: hd, hl: hw, h: yaw });
             // boundary wall (precast or palisade) at the street with a driveway gap
             const woff = r.w / 2 + 2.2; const wx = px + rx * side * woff, wz = pz + rz * side * woff;
@@ -373,7 +422,7 @@ export class OsmWorld {
               const cxw = wx + ux * wo, czw = wz + uz * wo;
               // never put a wall across a side street
               let clear = true;
-              for (const e of [-3.75, 0, 3.75]) { const q = this.nearest(cxw + ux * e, czw + uz * e, { exclude: ri }); if (q.d < q.w / 2 + 2.5) { clear = false; break; } }
+              for (const e of [-3.75, -1.9, 0, 1.9, 3.75]) { const q = this.nearest(cxw + ux * e, czw + uz * e); if (q.d < q.w / 2 + 1.6) { clear = false; break; } }   // never on any road (own road's bends included)
               if (!clear) continue;
               houses.push({ wall: true, palisade, x: cxw, z: czw, yaw, len: 7.5 });
               obstacles.push({ type: 'box', x: cxw, z: czw, hw: 0.15, hl: 3.75, h: yaw });
@@ -384,8 +433,10 @@ export class OsmWorld {
         acc -= L;
       }
     }
+    }, { label: 'houses' }));
+    t.steps.push(Object.assign(() => {
     const ws = houses.filter((h) => h.wall);
-    for (const style of ['arch', 'brick', 'modern']) {
+    for (const style of ['arch', 'brick', 'modern', 'white', 'blue', 'grey', 'peach']) {
       const hs = houses.filter((h) => !h.wall && h.style === style); if (!hs.length) continue;
       const im = new THREE.InstancedMesh(this.houseGeo, this.style.lenMats[style], hs.length);
       const pitched = hs.filter((h) => !h.flat), flat = hs.filter((h) => h.flat);
@@ -404,8 +455,9 @@ export class OsmWorld {
       list.forEach((w, k) => { _p.set(w.x, 0, w.z); _e.set(0, w.yaw, 0); _q.setFromEuler(_e); _s.set(pal ? 1 : 0.25, 1.8, w.len); _m.compose(_p, _q, _s); im.setMatrixAt(k, _m); });
       im.castShadow = !pal; im.userData.shared = true; g.add(im);
     }
+    }, { label: 'housemesh' }));
     // main roads: lamp posts, jacarandas/palms on the verge, pavements are part of the road mesh
-    { let nl = 0; const lampsAt = [];
+    t.steps.push(Object.assign(() => { let nl = 0; const lampsAt = [];
       for (const ri of roads) {
         const r = this.roads[ri]; if (!/primary|secondary|tertiary|trunk/.test(r.t) || /link/.test(r.t)) continue;
         let acc = 12 + hash(ri, 3) * 20, seq = 0;
@@ -442,9 +494,10 @@ export class OsmWorld {
         const banners = new THREE.InstancedMesh(M.bannerGeo, M.banner, nl); for (let i = 0; i < nl; i++) { lamps.getMatrixAt(i, _m); banners.setMatrixAt(i, _m); }
         lamps.castShadow = true; pools.renderOrder = 2; for (const im of [lamps, glows, pools, banners]) { im.userData.shared = true; im.frustumCulled = false; g.add(im); }
       }
-    }
+    }, { label: 'lamps' }));
+    t.steps.push(Object.assign(() => {
     // street furniture: traffic lights, stop signs, speed humps, crossings, street-name signs
-    const furn = this.buildFurniture(tx, tz, tk, g, obstacles);
+    const furn = this.buildFurniture(tx, tz, tk, g, obstacles); t.humps = furn.humps; t.pads = furn.pads;
     // trees: mapped trees + park trees + street trees
     for (const t of (this.tileTrees.get(tk) || [])) { trees.push({ x: t[0], z: t[1], scale: 0.8 + hash(t[0] | 0, t[1] | 0) * 0.5, rot: 0 }); obstacles.push({ type: 'circle', x: t[0], z: t[1], r: 0.5 }); }
     for (const ai of (this.tileAreas.get(tk) || [])) { const a = this.data.areas[ai]; if (a.k !== 'park' && a.k !== 'grass') continue; const c = centroid(a.p); if (c[0] < x0 || c[0] >= x0 + TILE || c[1] < z0 || c[1] >= z0 + TILE) continue; const bb = bboxOf(a.p); const n = Math.min(14, Math.floor((bb[2] - bb[0]) * (bb[3] - bb[1]) / 2500)); for (let k = 0; k < n; k++) { const px = bb[0] + hash(ai, k, 1) * (bb[2] - bb[0]), pz = bb[1] + hash(ai, k, 2) * (bb[3] - bb[1]); if (!pointInPoly(px, pz, a.p)) continue; if (this.nearest(px, pz).d < 8) continue; trees.push({ x: px, z: pz, scale: 0.9 + hash(ai, k, 3) * 0.5, rot: 0 }); obstacles.push({ type: 'circle', x: px, z: pz, r: 0.5 }); } }
@@ -486,8 +539,9 @@ export class OsmWorld {
     }
     // landmark models collected while building this tile (one draw call per type)
     { const byId = {}; for (const l of this.lm) (byId[l.id] = byId[l.id] || []).push(l); for (const id in byId) { const im = landmarkInstances(id, byId[id]); if (im) g.add(im); } this.lm = []; }
+    }, { label: 'furniture' }));
     this.group.add(g);
-    return { tx, tz, group: g, obstacles, roads, areas: this.tileAreas.get(tk) || [], humps: furn.humps, pads: furn.pads, parked };
+    return t;
   }
   gbNear(x, z, dist) {
     const tx = Math.floor(x / TILE), tz = Math.floor(z / TILE);
@@ -496,17 +550,23 @@ export class OsmWorld {
   }
   // real building footprints: small ones become instanced boxes (fast), big ones are extruded
   buildGB(list, g, obstacles, houses) {
-    const LM = this.style.lenMats; const styles = { arch: [], brick: [], modern: [], flats: [] }; const roofsP = []; const flatCaps = [];
+    const LM = this.style.lenMats; const styles = { arch: [], brick: [], modern: [], white: [], blue: [], grey: [], peach: [], flats: [] }; const roofsP = []; const flatCaps = [];
     for (const i of list) {
       const b = this.gb[i]; const c = b.c;
       if (this.nearBuilding(c[0], c[1], 9)) continue;                       // OSM already has this one
       if (this.style.showroomAt && Math.hypot(c[0] - this.style.showroomAt[0], c[1] - this.style.showroomAt[1]) < 26) continue;   // the Glyde-X showroom stands here
+      if (hasLandmark('engen') && this.nearFuel(c[0], c[1], 24)) continue;   // the petrol-station model stands here
       const nr = this.nearest(c[0], c[1]); if (nr.d < nr.w / 2 + 2.5) continue;   // sits on a road (bad detection)
       const ob = obbOf(b.p); const area = b.a; const hs = hash(c[0] | 0, c[1] | 0, 3);
       let style, h, flat = false;
       if (area > 450) { style = 'flats'; h = area > 1200 ? 8 : 6.6; flat = true; }
-      else if (area < 70) { style = hs < 0.6 ? 'arch' : 'modern'; h = 3.2; flat = hs > 0.6; }
-      else { style = hs < 0.35 ? 'arch' : hs < 0.72 ? 'brick' : 'modern'; const two = area > 150 ? hash(c[0] | 0, c[1] | 0, 4) < 0.6 : hash(c[0] | 0, c[1] | 0, 4) < 0.25; h = two ? 6.3 : 3.4; flat = style === 'modern'; }
+      else if (area < 70) { style = hs < 0.5 ? 'arch' : hs < 0.8 ? 'white' : 'modern'; h = 3.2; flat = style === 'modern'; }
+      else { const two = area > 150 ? hash(c[0] | 0, c[1] | 0, 4) < 0.6 : hash(c[0] | 0, c[1] | 0, 4) < 0.25; style = two ? TWO[Math.floor(hs * TWO.length)] : ONE[Math.floor(hs * ONE.length)]; h = two ? 6.3 : 3.4; flat = style === 'modern' || style === 'grey' || style === 'peach'; }
+      // classroom blocks inside school grounds
+      if (area >= 220 && hasLandmark('school') && area / (4 * ob.hw * ob.hl) > 0.7 && Math.max(ob.hw, ob.hl) / Math.min(ob.hw, ob.hl) > 1.6 && this.inSchool(c[0], c[1])) {
+        const fit = fitLandmark('school', ob, nr.px != null ? nr.px : c[0] + 1, nr.px != null ? nr.pz : c[1], { min: 12, maxH: 7.5, stretch: 1.8 });
+        if (fit) { this.lm.push(fit); obstacles.push({ type: 'box', ...ob }); continue; }
+      }
       // the big double-storey "Lenasia house" model on large, squarish plots
       if (area >= 190 && area <= 450 && hasLandmark('house') && area / (4 * ob.hw * ob.hl) > 0.78 && hash(c[0] | 0, c[1] | 0, 6) < 0.45) {
         const fit = fitLandmark('house', ob, nr.px != null ? nr.px : c[0] + 1, nr.px != null ? nr.pz : c[1], { min: 9, maxH: 7.4, stretch: 1.3 });
@@ -607,8 +667,13 @@ export class OsmWorld {
       if (lmFit) { this.lm.push(lmFit); h = area / (4 * ob.hw * ob.hl) > 0.72 ? 0 : 2.4; }
     } else if (isMall && hasLandmark('mall') && area > 1500) {
       const e = this.entranceEdge(b);
-      if (e) { const P = LANDMARKS.mall; const S = Math.max(24, Math.min(36, e.L * 0.9)); const sy = Math.min(S, 11 / P.h);
-        mallLM = { id: 'mall', x: e.mx + e.nx * (0.6 - P.d * S / 2), z: e.mz + e.nz * (0.6 - P.d * S / 2), yaw: Math.atan2(e.nx, e.nz), sx: S, sy, sz: S }; this.lm.push(mallLM); }
+      if (e) { const big = area > 6000 && hasLandmark('bigmall'); const id = big ? 'bigmall' : 'mall'; const P = LANDMARKS[id]; const S = big ? Math.max(40, Math.min(64, e.L * 0.9)) : Math.max(24, Math.min(36, e.L * 0.9)); const sy = Math.min(S, 11 / P.h);
+        mallLM = { id, x: e.mx + e.nx * (0.6 - P.d * S / 2), z: e.mz + e.nz * (0.6 - P.d * S / 2), yaw: Math.atan2(e.nx, e.nz), sx: S, sy, sz: S }; this.lm.push(mallLM); }
+    } else if ((isTemple && hasLandmark('temple')) || (isChurch && hasLandmark('church')) || (isSchool && hasLandmark('school') && area > 350)) {
+      const id = isTemple ? 'temple' : isChurch ? 'church' : 'school'; const ob = obbOf(b.p); const nr0 = this.nearest(c0[0], c0[1]);
+      const opts = id === 'temple' ? { min: 9, maxH: 24, stretch: 1.25 } : id === 'church' ? { min: 7, maxH: 20, stretch: 1.3 } : { min: 16, maxH: 8, stretch: 1.6 };
+      lmFit = fitLandmark(id, ob, nr0.px != null ? nr0.px : c0[0] + 1, nr0.px != null ? nr0.pz : c0[1], opts);
+      if (lmFit) { this.lm.push(lmFit); h = area / (4 * ob.hw * ob.hl) > 0.72 ? 0 : (id === 'school' ? 3.4 : 2.4); }
     }
     const shape = new THREE.Shape(b.p.map((p) => new THREE.Vector2(p[0], -p[1])));
     const geo = h > 0 ? new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false }) : null; if (geo) geo.rotateX(-Math.PI / 2);
@@ -644,9 +709,9 @@ export class OsmWorld {
       // arched entrance portico on the side nearest the road
       const nr = this.nearest(c[0], c[1]); const e = this.roadEdge(b, nr);
       if (e) { const pw = Math.min(10, e.L * 0.6); const por = new THREE.Mesh(new THREE.BoxGeometry(pw, Math.min(h, 5.5), 2.4), [LM.mosque, LM.mosque, this.mat.roofFlat, this.mat.roofFlat, LM.mosque, LM.mosque]); por.position.set(e.mx + e.nx * 1.3, Math.min(h, 5.5) / 2, e.mz + e.nz * 1.3); por.rotation.y = Math.atan2(e.nx, e.nz); por.castShadow = true; g.add(por); }
-    } else if (isTemple) {
+    } else if (isTemple && !lmFit) {
       for (let k = 0; k < 3; k++) { const sp = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(0.6, 2.6 - k * 0.8), Math.max(1.0, 3.4 - k * 0.8), 2.2, 4), k === 2 ? this.mat.gold : this.mat.white); sp.position.set(c[0], h + 1.1 + k * 2.2, c[1]); sp.rotation.y = Math.PI / 4; sp.castShadow = true; g.add(sp); }
-    } else if (isChurch) {
+    } else if (isChurch && !lmFit) {
       const tw = new THREE.Mesh(new THREE.BoxGeometry(3.2, h + 5, 3.2), this.mat.white); tw.position.set(bb[0] + 2, (h + 5) / 2, bb[1] + 2); tw.castShadow = true; g.add(tw);
       const sp = new THREE.Mesh(new THREE.ConeGeometry(2.3, 4.5, 4), this.mat.roofFlat); sp.position.set(bb[0] + 2, h + 7.2, bb[1] + 2); sp.rotation.y = Math.PI / 4; g.add(sp);
     } else if (isMall) {
@@ -657,7 +722,7 @@ export class OsmWorld {
       const plant = new THREE.Mesh(new THREE.BoxGeometry(Math.max(4, span * 0.25), 2, Math.max(4, span * 0.25)), this.mat.roofFlat); plant.position.set(c[0], h + 1, c[1]); g.add(plant);
     }
     // Glyde-X rooftop board on malls and big flat-roofed buildings
-    if ((isMall || isShop || isFlats || isInstit) && area > 500 && hash(c[0] | 0, c[1] | 0, 21) < 0.6) {
+    if ((isMall || isShop || isFlats || isInstit) && !lmFit && !isTemple && !isChurch && !isMosque && area > 500 && hash(c[0] | 0, c[1] | 0, 21) < 0.6) {
       const nr = this.nearest(c[0], c[1]); const e = this.roadEdge(b, nr);
       if (e) { const M = this.M; const sc = Math.min(1, e.L / 14); const sg = new THREE.Mesh(M.bbPanelGeo, [M.rail, M.rail, M.rail, M.rail, M.billboards[(b.c[0] | 0) % 6 < 0 ? 0 : Math.abs(b.c[0] | 0) % 6], M.rail]);
         sg.scale.set(sc, 0.75, 1); sg.position.set(e.mx - e.nx * 2.5, h + 2.4, e.mz - e.nz * 2.5); sg.rotation.y = Math.atan2(e.nx, e.nz); sg.userData.shared = true; g.add(sg);
@@ -716,11 +781,20 @@ export class OsmWorld {
     const h = nr.h;
     const grp = new THREE.Group(); grp.position.set(p.c[0], 0, p.c[1]); grp.rotation.y = h;
     const wp = (lx, lz) => [p.c[0] + lx * Math.cos(h) + lz * Math.sin(h), p.c[1] - lx * Math.sin(h) + lz * Math.cos(h)];
+    if (hasLandmark('engen')) {
+      // the real forecourt model, facing the road; columns and pumps as obstacles
+      // the forecourt sits between the shop (where the map pin usually is) and the road
+      const S = 13; let cx = p.c[0], cz = p.c[1]; let yaw = h;
+      if (nr.px != null) { const dx = nr.px - cx, dz = nr.pz - cz; const d = Math.hypot(dx, dz) || 1; yaw = Math.atan2(dx, dz); const push = Math.max(0, d - nr.w / 2 - 8.5); if (push > 0 && this.nearBuilding(cx, cz, 6)) { cx += dx / d * push; cz += dz / d * push; } }
+      this.lm.push({ id: 'engen', x: cx, z: cz, yaw, sx: S, sy: S, sz: S }); grp.position.set(cx, 0, cz);
+      const cy = Math.cos(yaw), sy = Math.sin(yaw); for (const [lx, lz] of [[-4.5, -4.5], [4.5, -4.5], [-4.5, 4.5], [4.5, 4.5], [-2.2, 0], [2.2, 0]]) obstacles.push({ type: 'circle', x: cx + lx * cy + lz * sy, z: cz - lx * sy + lz * cy, r: lz === 0 ? 0.6 : 0.3 });
+    } else {
     const roof = new THREE.Mesh(new THREE.BoxGeometry(14, 0.6, 9), this.mat.white); roof.position.y = 4.8; roof.castShadow = true; grp.add(roof);
     const band = new THREE.Mesh(new THREE.BoxGeometry(14.2, 0.9, 9.2), this.mat.navy); band.position.y = 4.1; grp.add(band);
     for (const [px, pz] of [[-5, -3], [5, -3], [-5, 3], [5, 3]]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 4, 8), this.mat.white); post.position.set(px, 2, pz); grp.add(post); const [ox, oz] = wp(px, pz); obstacles.push({ type: 'circle', x: ox, z: oz, r: 0.25 }); }
     for (const px of [-2.5, 2.5]) { const pump = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.7, 0.5), this.mat.gold); pump.position.set(px, 0.85, 0); grp.add(pump); const [ox, oz] = wp(px, 0); obstacles.push({ type: 'box', x: ox, z: oz, hw: 0.5, hl: 0.3, h }); }
-    const sign = new THREE.Mesh(new THREE.BoxGeometry(3, 1, 0.2), [this.mat.navy, this.mat.navy, this.mat.navy, this.mat.navy, this.nameTexture(p.name || 'Petrol', '⛽'), this.mat.navy]); sign.position.set(0, 5.9, 0); grp.add(sign);
+    }
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(3, 1, 0.2), [this.mat.navy, this.mat.navy, this.mat.navy, this.mat.navy, this.nameTexture(p.name || 'Petrol', '⛽'), this.mat.navy]); sign.position.set(0, hasLandmark('engen') ? 8.2 : 5.9, 0); grp.add(sign);
     g.add(grp);
   }
 

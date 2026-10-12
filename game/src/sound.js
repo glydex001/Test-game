@@ -29,7 +29,12 @@ export const Sound = {
     this.setOn(this.on);
   },
   setOn(v) { this.on = v; if (this.master) this.master.gain.value = v ? 0.8 : 0; },
-  resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); },
+  resume() { if (this.ctx && this.ctx.state === 'suspended' && !this.paused) this.ctx.resume(); },
+  // silence everything (pause menu, app in the background): the whole audio graph sleeps
+  pause() { this.paused = true; if (this.ctx && this.ctx.state === 'running') this.ctx.suspend(); },
+  unpause() { this.paused = false; this.resume(); },
+  // engine and road noise off (garage); clicks and fanfares still play
+  quiet() { if (!this.engine) return; this.engine.eg.gain.value = 0; this.wind.g.gain.value = 0; this.squeal.g.gain.value = 0; this.gravel.g.gain.value = 0; this.rpm = 0; },
   // speed m/s, gas bool, slide = lateral slip m/s, offRoad bool, dt seconds
   update(speed, maxSpeed, gas, boosting, slide = 0, offRoad = false, dt = 0.016) {
     if (!this.engine) return;
@@ -57,10 +62,10 @@ export const Sound = {
     sm(this.gravel.g.gain, offRoad ? clamp(speed / 15, 0, 1) * 0.2 : 0, 0.15);
     sm(this.rainN.g.gain, this.rain ? 0.045 : 0, 0.05);
   },
-  horn() {
+  horn(k = 1) {
     if (!this.ctx || !this.on) return;
     const t = this.ctx.currentTime;
-    for (const f of [420, 525]) {
+    for (const f of [420 * k, 525 * k]) {
       const o = this.ctx.createOscillator(); o.type = 'square'; o.frequency.value = f;
       const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1200;
       const g = this.ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + 0.03); g.gain.setValueAtTime(0.18, t + 0.45); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);

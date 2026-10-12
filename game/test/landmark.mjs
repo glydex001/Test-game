@@ -14,7 +14,7 @@ await page.dispatchEvent('#btnPlay', 'pointerdown');
 for (const [name, x, z] of spots.pts) {
   await page.evaluate(([x, z]) => { const W = window.__kidcars.world(); const n = W.road.nearest(x, z, { skipMinor: true }); const lx = Math.cos(n.h), lz = -Math.sin(n.h); const px = n.px - lx * n.w / 4, pz = n.pz - lz * n.w / 4; window.__kidcars.body().h = n.h; window.__kidcars.teleport(px, pz); for (let i = 0; i < 4; i++) W.road.ensure(px, pz); }, [x, z]);
   await page.waitForTimeout(2500);
-  console.log('tile build ms', JSON.stringify(await page.evaluate(() => { const W = window.__kidcars.world(); const b = window.__kidcars.body(); const out = []; for (let k = 0; k < 6; k++) { const t0 = performance.now(); W.road.ensure(b.x + k * 400, b.z); out.push(Math.round(performance.now() - t0)); } return out; })));
+  console.log('tile build ms', JSON.stringify(await page.evaluate(() => { const W = window.__kidcars.world(); const b = window.__kidcars.body(); const out = []; for (let k = 0; k < 6; k++) { W.road.finishTiles && W.road.finishTiles(b.x, b.z); const t0 = performance.now(); W.road.ensure(b.x + k * 400, b.z); out.push(Math.round(performance.now() - t0)); } return out; })));
   await page.waitForTimeout(2500);
   await page.screenshot({ path: `shots/lm-${name}.png`, timeout: 150000 });
 }

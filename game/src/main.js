@@ -7,7 +7,7 @@ import { CarBody, collideCars, collideCircle, collideBox } from './physics.js';
 import { Sound } from './sound.js';
 import { Voice, COLOR_NAMES, missionLetter, NUM_WORDS } from './voice.js';
 import { Rain, SkidMarks } from './fx.js';
-import { P, saveP, STICKERS, newStickers, initStars, addStar, updateStars, clearStars, makeTargetMarker, makeRecliner, Missions } from './goals.js';
+import { P, saveP, STICKERS, newStickers, initStars, addStar, updateStars, clearStars, removeStars, makeTargetMarker, makeRecliner, Missions, initGuide, routeInfo, updateGuide } from './goals.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -40,7 +40,7 @@ function resize() { const w = window.innerWidth, h = window.innerHeight; rendere
 window.addEventListener('resize', resize);
 const W = createWorld(scene, renderer);
 initStars(scene);
-const marker = makeTargetMarker(scene);
+const marker = makeTargetMarker(scene); initGuide(scene);
 const rain = new Rain(scene), skids = new SkidMarks(scene);
 // garage turntable (shown under the car in the menu)
 const turntable = new THREE.Group();
@@ -238,7 +238,11 @@ wheelEl.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') 
 wheelEl.addEventListener('pointermove', (e) => { if (e.pointerType === 'touch' || !wheelDrag || wheelDrag.id !== 'mouse') return; turnWheel(e.clientX, e.clientY); });
 const mouseWheelUp = (e) => { if (e.pointerType === 'touch') return; if (wheelDrag && wheelDrag.id === 'mouse') wheelDrag = null; };
 wheelEl.addEventListener('pointerup', mouseWheelUp); wheelEl.addEventListener('pointercancel', mouseWheelUp);
-function honk() { Sound.horn(); P.horns++; missionEvent('horn'); }
+function honk() {
+  Sound.horn(); P.horns++; missionEvent('horn');
+  // a car just ahead beeps back and hurries along
+  if (body) { const [fx, fz] = body.fwd(); for (const t of traffic) { if (!t.active || !t.body) continue; const dx = t.body.x - body.x, dz = t.body.z - body.z; const ah = dx * fx + dz * fz; if (ah > 0 && ah < 40 && Math.abs(dx * fz - dz * fx) < 7) { t.beepT = 0.45 + Math.random() * 0.3; t.hurry = 3.5; } } }
+}
 $('btnHorn').addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; e.preventDefault(); Sound.init(); Sound.resume(); honk(); });
 $('btnCam').addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; settings.cam = (settings.cam + 1) % 3; save(); });
 $('btnFix').addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; repairCar(); });
@@ -341,18 +345,40 @@ function toast(big, txt, confetti) {
 function missionEvent(type, v) {
   if (state !== 'drive') return;
   const r = missions.event(type, v);
-  if (r === 'pickup') { attachRecliner(); toast('GOT IT! 🛋️', missions.label().text); Sound.fanfare(); refreshMissionLabel(); Voice.say('Got the recliner! ' + missions.label().text); }
+  if (r === 'pickup') { attachRecliner(); hideVan(); G.route = null; toast('GOT IT! 🛋️', missions.label().text); Sound.fanfare(); refreshMissionLabel(); Voice.say('Got the recliner! ' + missions.label().text); }
   else if (r === 'done') missionDone();
 }
+// the Glyde-X delivery van that waits at a pickup point
+let van = null;
+function makeVan() {
+  const M = W.current.mats; const g = new THREE.Group();
+  const navy = new THREE.MeshStandardMaterial({ color: 0x17283C, roughness: 0.5, metalness: 0.2 }), white = new THREE.MeshStandardMaterial({ color: 0xf4f4f4, roughness: 0.5 }), dark = new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.9 });
+  const side = (M && M.billboards && M.billboards[0]) || navy;
+  const box = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.3, 4.2), [side, side, navy, navy, navy, navy]); box.position.set(0, 1.55, 0.5); box.castShadow = true; g.add(box);
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.7, 1.7), white); cab.position.set(0, 1.25, -2.4); cab.castShadow = true; g.add(cab);
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.7, 0.1), new THREE.MeshStandardMaterial({ color: 0x8fb3d9, roughness: 0.2, metalness: 0.4 })); glass.position.set(0, 1.5, -3.26); g.add(glass);
+  for (const [x, z] of [[-1, -2.2], [1, -2.2], [-1, 1.6], [1, 1.6]]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.3, 14), dark); w.rotation.z = Math.PI / 2; w.position.set(x, 0.42, z); g.add(w); }
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.5), M && M.sign ? M.sign : white); sign.position.set(0, 2.45, 0.5); sign.rotation.y = Math.PI; g.add(sign);
+  return g;
+}
+function placeVan(x, z) {
+  if (!van) { van = makeVan(); scene.add(van); }
+  const n = W.road.nearest(x, z); const h = n.px != null ? n.h : 0; const lx = Math.cos(h), lz = -Math.sin(h);   // right of the road direction
+  van.position.set(x - lx * (n.w / 2 + 1.6), 0, z - lz * (n.w / 2 + 1.6)); van.rotation.y = h; van.visible = true;
+}
+function hideVan() { if (van) van.visible = false; }
 function missionDone() {
-  const m = missions.cur; P.stars += m.reward; P.missions++; if (m.kind === 'deliver') { P.deliveries++; detachRecliner(); }
+  const m = missions.cur; P.stars += m.reward; P.missions++; if (m.kind === 'deliver') { P.deliveries++; detachRecliner(); } if (m.kind === 'photo') P.photoMissions = (P.photoMissions || 0) + 1; if (m.timer != null) P.dashes = (P.dashes || 0) + 1;
+  hideVan(); removeStars('mission'); G.route = null;
   toast('GREAT JOB!', `Alhamdulillah · +${m.reward} ⭐`, true); Sound.fanfare(true); $('starnum').textContent = P.stars; saveP(); Voice.say('Alhamdulillah! Great job!');
   for (const s of newStickers()) toast('NEW STICKER!', `${s.e} ${s.n}`);
   G.missionT = 3.5;   // next mission after the celebration
 }
 function startMission() {
+  removeStars('mission'); hideVan(); G.route = null;
   missions.next({ isMap: !!W.road.isMap, road: W.road, x: body.x, z: body.z, maxKmh: playerSpec.maxKmh, traffic: settings.traffic, showroomAt: W.current.showroomAt });
-  refreshMissionLabel(); toast(missions.cur.icon + ' ' + missions.cur.text, 'New mission!');
+  const mc = missions.cur; if (mc.van) placeVan(mc.target[0], mc.target[1]);
+  refreshMissionLabel(); toast(mc.icon + ' ' + mc.text, mc.timer != null ? `Get there in ${mc.timer} seconds!` : 'New mission!');
   const L = missionLetter(missions.cur); if (L) { toast(`${L.L} is for ${L.word}`, missions.cur.icon + ' ' + L.word); Voice.say(`New mission! ${L.L} is for ${L.word}. ${missions.cur.text}`); } else Voice.say('New mission! ' + missions.cur.text);
 }
 let lastLabel = '';
@@ -381,9 +407,9 @@ function pauseGame() {
   if (state !== 'drive') return;
   state = 'pause'; $('pauseov').classList.remove('hidden');
   for (const k in input) if (k !== 'tilt') input[k] = false; touches.clear(); mouseHeld.clear(); wheelDrag = null; recomputeTouchInput();
-  if (Sound.engine) Sound.update(0, 1, false, false);
+  if (Sound.engine) Sound.update(0, 1, false, false); Sound.pause(); Voice.stop();
 }
-function resumeGame() { if (state !== 'pause') return; state = 'drive'; $('pauseov').classList.add('hidden'); clock.getDelta(); Sound.resume(); }
+function resumeGame() { if (state !== 'pause') return; state = 'drive'; $('pauseov').classList.add('hidden'); clock.getDelta(); Sound.unpause(); }
 // ---- photo mode: grab the next rendered frame, show it as a polaroid, save it to the phone's gallery
 let photoReq = false;
 function takePhoto() { if (state !== 'drive' || photoReq) return; photoReq = true; }
@@ -393,7 +419,7 @@ function finishPhoto() {
     const url = canvas.toDataURL('image/jpeg', 0.9);
     $('polaimg').src = url; $('polaroid').classList.remove('hidden'); setTimeout(() => $('polaroid').classList.add('hidden'), 2600);
     const fl = $('flash'); fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go');
-    Sound.click(); vib(20); P.photos++; saveP();
+    Sound.click(); vib(20); P.photos++; saveP(); missionEvent('photo', [body.x, body.z]);
     if (window.Android && window.Android.savePhoto) window.Android.savePhoto(url.split(',')[1]);
     for (const s of newStickers()) toast('NEW STICKER!', `${s.e} ${s.n}`);
   } catch (e) { console.warn('photo failed', e); }
@@ -425,7 +451,7 @@ function startDrive() {
   traffic.forEach((t, i) => { if (settings.traffic && (W.road.isMap || i < 6)) (W.road.isMap ? spawnMapTraffic(t) : spawnTraffic(t, true)); else { t.active = false; if (t.mesh) t.mesh.visible = false; } });
   P.cars[playerSpec.id] = 1; $('starnum').textContent = P.stars; G.combo = 0; G.missionT = 0; G.starsRun = 0; G.saidStreet = ''; G.lastMasjid = null; G.redStop = G.greenSaid = G.redRun = null; G.lastPad = null; G.padT = 0; detachRecliner(); skids.clear();
   for (const k of ['roll', 'pitch', 'heave']) { S[k].x = 0; S[k].v = 0; } S.prevVf = 0; S.wasOff = false;
-  W.road.ensure(W.road.isMap ? body.x : G.idx, body.z);
+  if (W.road.isMap) W.road.ensure(body.x, body.z, true); else W.road.ensure(G.idx);   // the start area all at once, then one step per frame
   startMission();
 }
 function spawnMapTraffic(t) {
@@ -437,12 +463,12 @@ function spawnMapTraffic(t) {
   t.active = true; t.mesh.visible = true; t.spd = null;
 }
 function toMenu() {
-  state = 'menu'; hud.classList.add('hidden'); menu.classList.remove('hidden'); $('totaled').classList.add('hidden'); $('pauseov').classList.add('hidden'); $('polaroid').classList.add('hidden');
+  state = 'menu'; Sound.unpause(); hud.classList.add('hidden'); menu.classList.remove('hidden'); $('totaled').classList.add('hidden'); $('pauseov').classList.add('hidden'); $('polaroid').classList.add('hidden');
   for (const k in input) if (k !== 'tilt') input[k] = false; touches.clear(); mouseHeld.clear(); wheelDrag = null; lockEnd('menu'); recomputeTouchInput();
   traffic.forEach((t) => { t.active = false; if (t.mesh) t.mesh.visible = false; });
   player.position.set(0, 0, 0); player.rotation.set(0, 0, 0); G.menuAngle = 0.7; G.damage = 0; G.totaled = false; applyDamageLook();
-  if (Sound.engine) Sound.update(0, 1, false, false);
-  detachRecliner(); marker.visible = false; $('toast').classList.add('hidden'); toastQ.length = 0; toastBusy = false;
+  if (Sound.engine) { Sound.update(0, 1, false, false); Sound.quiet(); }
+  detachRecliner(); marker.visible = false; hideVan(); removeStars('mission'); G.route = null; updateGuide(null); $('toast').classList.add('hidden'); toastQ.length = 0; toastBusy = false;
   saveP(); refreshBook();
 }
 function repairCar() {
@@ -493,6 +519,7 @@ function drawMiniMap() {
   const tx = Math.floor(body.x / 400), tz = Math.floor(body.z / 400);
   for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const p of (rd.tilePois.get(rd.key(tx + dx, tz + dz)) || [])) { ctx.fillStyle = /school/i.test(p.k) ? '#60a5fa' : /worship|mosque/i.test(p.k) ? '#34d399' : /fuel/i.test(p.k) ? '#f97316' : '#f472b6'; ctx.beginPath(); ctx.arc(p.c[0], p.c[1], 7, 0, Math.PI * 2); ctx.fill(); }
   if (W.current.showroomAt) { ctx.fillStyle = '#D0B46C'; ctx.beginPath(); ctx.arc(W.current.showroomAt[0], W.current.showroomAt[1], 9, 0, Math.PI * 2); ctx.fill(); }
+  if (G.route && G.route.length > 1) { ctx.strokeStyle = 'rgba(255,213,74,0.95)'; ctx.lineWidth = 4 / SC; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(G.route[0][0], G.route[0][1]); for (let k = 1; k < G.route.length; k++) ctx.lineTo(G.route[k][0], G.route[k][1]); ctx.stroke(); }
   const tg = missions.target();
   if (tg) { const pr = (9 + Math.sin(physTime * 5) * 3) / SC; ctx.strokeStyle = '#ffd54a'; ctx.lineWidth = 3 / SC; ctx.beginPath(); ctx.arc(tg[0], tg[1], pr, 0, Math.PI * 2); ctx.stroke(); ctx.fillStyle = '#ffd54a'; ctx.beginPath(); ctx.arc(tg[0], tg[1], 4 / SC, 0, Math.PI * 2); ctx.fill(); }
   ctx.restore();
@@ -519,7 +546,8 @@ function update(dt) {
     if (settings.controls === 'wheel') { updateWheel(dt); if (steer === 0) steer = Math.sign(input.wheel) * Math.pow(Math.abs(input.wheel), 1.25); }
     if (settings.tilt && steer === 0) steer = input.tilt;
     if (G.totaled) { body.throttle = 0; body.brake = 0.4; body.steer = 0; body.yawRate = G.spin; G.spin *= Math.pow(0.4, dt); }
-    else { body.throttle = input.gas ? 1 : 0; body.brake = input.brake ? 1 : 0; body.steer = steer; }
+    else { body.throttle = input.gas ? 1 : 0; body.brake = input.brake ? 1 : 0; body.steer = G.air > 0 ? 0 : steer; }
+    if (G.air > 0) { body.surfaceGrip = 0.03; body.brake = 0; }
 
     // ---- road context
     const isMap = !!W.road.isMap;
@@ -540,6 +568,11 @@ function update(dt) {
     { const pd = W.road.padAt ? W.road.padAt(body.x, body.z) : null;
       if (pd && pd !== G.lastPad) { G.lastPad = pd; const [pfx, pfz] = body.fwd(); body.vx += pfx * 7; body.vz += pfz * 7; G.boostFuel = 1; G.padT = 1.4; P.pads = (P.pads || 0) + 1; toast('ZOOM! ⚡', 'Boost pad!'); Sound.whoosh(); vib(40); Voice.say('Zoom!', { min: 4000 }); }
       else if (!pd) G.lastPad = null; G.padT = Math.max(0, (G.padT || 0) - dt); }
+    // jump ramps (open roads): up the yellow wedge and into the air
+    { const rp = !isMap && W.road.rampAt ? W.road.rampAt(body.x, body.z) : null;
+      if (rp) { G.rampY = rp.t * 1.1; if (rp.t > 0.9 && !(G.air > 0) && Math.abs(body.vf) > 7) { const v = Math.abs(body.vf); G.air = 1; G.jumpV = Math.min(8, 2.5 + v * 0.17); G.jumpY = 1.1; P.jumps = (P.jumps || 0) + 1; toast('WHEEE! 🪽', 'Big jump!'); Sound.whoosh(); vib(30); Voice.say('Wheee!', { min: 3000 }); } }
+      else G.rampY = 0;
+      if (G.air > 0) { G.jumpY += G.jumpV * dt; G.jumpV -= 16 * dt; if (G.jumpY <= 0) { G.jumpY = 0; G.air = 0; S.heave.v -= 2.5; S.pitch.v += 0.6; Sound.bump(0.5); vib(50); G.shake = Math.max(G.shake, 0.5); } } }
     // speed humps: a thump and a bounce when you cross one too fast
     if (isMap) { const hp = W.road.humpAt(body.x, body.z); if (hp && hp !== G.lastHump) { G.lastHump = hp; const v = Math.abs(body.vf); if (v > 4) { S.heave.v += Math.min(1.6, v * 0.09); S.pitch.v -= Math.min(0.5, v * 0.02); Sound.bump(Math.min(0.6, v / 30)); vib(Math.min(60, v * 2)); if (v > 12) { body.vx *= 0.93; body.vz *= 0.93; } } } else if (!hp) G.lastHump = null; }
     // a damaged car wanders and loses power
@@ -571,6 +604,8 @@ function update(dt) {
     // ---- traffic
     for (const t of traffic) {
       if (!t.active) continue;
+      if (t.beepT != null) { t.beepT -= dt; if (t.beepT <= 0) { t.beepT = null; Sound.horn(1.3); } }
+      if (t.hurry > 0) t.hurry -= dt;
       if (isMap) {
         const ag = t.agent; const b = t.body;
         // slow down behind the player
@@ -579,7 +614,7 @@ function update(dt) {
         // queue behind other traffic and hold at red lights (so the kid sees cars stop and go too)
         let queued = false; for (const o of traffic) { if (o === t || !o.active || !o.body) continue; const ddx = o.body.x - b.x, ddz = o.body.z - b.z; const ah = ddx * tfx + ddz * tfz; if (ah > 0 && ah < 12 && Math.abs(ddx * tfz - ddz * tfx) < 2.6) { queued = true; break; } }
         const red = W.road.agentRed(ag);
-        const want = blocked ? Math.max(0, Math.abs(body.vf) - 1) : (queued || red) ? 0 : ag.speed;
+        const want = blocked ? Math.max(0, Math.abs(body.vf) - 1) : (queued || red) ? 0 : ag.speed * (t.hurry > 0 ? 1.35 : 1);
         t.spd = (t.spd == null ? ag.speed : t.spd) + (want - (t.spd == null ? ag.speed : t.spd)) * Math.min(1, (want < (t.spd || 0) ? 5 : 1.6) * dt); const target = t.spd;
         const stepSpeed = ag.speed; ag.speed = target; W.road.advanceAgent(ag, dt); ag.speed = stepSpeed;
         b.x += (ag.x - b.x) * Math.min(1, 10 * dt); b.z += (ag.z - b.z) * Math.min(1, 10 * dt);
@@ -606,7 +641,7 @@ function update(dt) {
       let gap = 1e9;
       const pn = Math.abs(near.d - LANES[t.lane]) < 2.4 ? G.s - t.s : 1e9; if (pn > 0 && pn < gap) gap = pn;
       for (const o of traffic) if (o !== t && o.active && o.lane === t.lane) { const g = o.s - t.s; if (g > 0 && g < gap) gap = g; }
-      const want = gap < 12 ? 0 : gap < 30 ? Math.min(t.target, gap * 0.6) : t.target;
+      const tgt = t.target * (t.hurry > 0 ? 1.4 : 1); const want = gap < 12 ? 0 : gap < 30 ? Math.min(tgt, gap * 0.6) : tgt;
       b.throttle = b.vf < want ? 0.7 : 0; b.brake = b.vf > want + 2 ? 0.6 : 0;
       b.offRoad = Math.abs(tn.d) > ROAD_W / 2 + 0.6; b.surfaceGrip = b.offRoad ? 0.6 : 1;
       b.update(dt, 45, 7, 6, false);
@@ -624,7 +659,7 @@ function update(dt) {
     spring(S.pitch, clamp(aF * 0.0055, -0.05, 0.05), dt);
     spring(S.heave, 0, dt);
     if (body.offRoad !== S.wasOff) { S.wasOff = body.offRoad; if (Math.abs(body.vf) > 3) { S.heave.v += 0.5; G.shake = Math.max(G.shake, 0.2); Sound.bump(0.25); vib(25); } }
-    player.position.set(body.x, Math.max(-0.02, S.heave.x), body.z); player.rotation.y = body.h;
+    player.position.set(body.x, Math.max(-0.02, S.heave.x) + (G.rampY || 0) + (G.jumpY || 0), body.z); player.rotation.y = body.h;
     player.rotation.z = S.roll.x; player.rotation.x = S.pitch.x;
     if (body.offRoad) {
       player.position.y += Math.abs(body.vf) > 2 ? Math.sin(clock.elapsedTime * 31) * 0.03 : 0; G.shake = Math.max(G.shake, clamp(Math.abs(body.vf) / 20, 0, 0.35));
@@ -661,13 +696,23 @@ function update(dt) {
     if (missions.cur && !missions.cur.done) {
       refreshMissionLabel();
       const tg = missions.target();
+      const to = missions.tick(dt); if (to === 'timeout') { toast("TIME'S UP ⏱️", 'No worries — just drive there'); Voice.say("Time's up! No worries, just drive there."); refreshMissionLabel(); }
       if (tg) {
         marker.visible = true; marker.position.set(tg[0], 0, tg[1]); marker.userData.tick(dt, physTime);
         const dxT = tg[0] - body.x, dzT = tg[1] - body.z; const distT = Math.hypot(dxT, dzT);
-        let rel = Math.atan2(-dxT, -dzT) - body.h; while (rel > Math.PI) rel -= Math.PI * 2; while (rel < -Math.PI) rel += Math.PI * 2;
-        $('marrow').classList.remove('off'); $('marrow').style.transform = `rotate(${-90 - rel * 180 / Math.PI}deg)`; $('mprog').textContent = distT < 1000 ? Math.round(distT / 10) * 10 + ' m' : (distT / 1000).toFixed(1) + ' km';
-      } else { marker.visible = false; $('marrow').classList.add('off'); }
-    } else { marker.visible = false; $('marrow').classList.add('off'); }
+        // road route to the target (map mode): floating arrows along the streets, re-planned when the car strays
+        let aimX = tg[0], aimZ = tg[1];
+        if (isMap) {
+          G.routeT = (G.routeT || 0) - dt; const key = tg[0] + ',' + tg[1]; const ri = G.route ? routeInfo(G.route, body.x, body.z, 28) : null;
+          if (G.routeKey !== key || !G.route || G.routeT <= 0 || (ri && ri.d > 30)) { G.route = distT > 25 ? W.road.route(body.x, body.z, tg[0], tg[1]) : null; G.routeKey = key; G.routeT = 2.5; }
+          const ri2 = G.route ? routeInfo(G.route, body.x, body.z, 28) : null; if (ri2 && distT > 30) { aimX = ri2.x; aimZ = ri2.z; }
+          updateGuide(distT > 25 ? G.route : null, body.x, body.z, physTime);
+        }
+        let rel = Math.atan2(-(aimX - body.x), -(aimZ - body.z)) - body.h; while (rel > Math.PI) rel -= Math.PI * 2; while (rel < -Math.PI) rel += Math.PI * 2;
+        const dtxt = distT < 1000 ? Math.round(distT / 10) * 10 + ' m' : (distT / 1000).toFixed(1) + ' km'; const mm = missions.cur;
+        $('marrow').classList.remove('off'); $('marrow').style.transform = `rotate(${-90 - rel * 180 / Math.PI}deg)`; $('mprog').textContent = mm.timer != null ? `${Math.floor(mm.timer / 60)}:${String(Math.ceil(mm.timer % 60)).padStart(2, '0')} · ${dtxt}` : dtxt;
+      } else { marker.visible = false; $('marrow').classList.add('off'); updateGuide(null); }
+    } else { marker.visible = false; $('marrow').classList.add('off'); updateGuide(null); }
     G.saveT += dt; if (G.saveT > 10) { G.saveT = 0; saveP(); for (const s of newStickers()) { toast('NEW STICKER!', `${s.e} ${s.n}`); Sound.fanfare(); } }
 
     // ---- world upkeep
@@ -758,12 +803,13 @@ applyControlsMode(); applyQuality();
 preload().then(() => { setPlayerCar(); refreshMenu(); toMenu(); refreshBook(); }).catch((e) => { loadTxt.textContent = 'Something went wrong: ' + e; console.error(e); });
 camera.position.set(6, 3, 7);
 frame(0);
-document.addEventListener('visibilitychange', () => { if (document.hidden) { input.gas = input.brake = input.boost = false; pauseGame(); saveP(); } else { Sound.resume(); clock.getDelta(); } });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { input.gas = input.brake = input.boost = false; pauseGame(); Sound.pause(); Voice.stop(); saveP(); } else { if (state !== 'pause') Sound.unpause(); clock.getDelta(); } });
 applyLock();
 window.__kidcars = { G, P, settings, missions, state: () => state, hasCar, body: () => body, simTime: () => physTime, roadReady: () => !!W.road, inputs: () => ({ ...input }), world: () => W, toast,
   // test hooks
   addStarAhead: (n) => { const [fx, fz] = body.fwd(); for (let k = 0; k < n; k++) addStar(body.x + fx * (8 + k * 4), body.z + fz * (8 + k * 4), 'test'); },
   teleport: (x, z) => { body.x = x; body.z = z; body.vx = body.vz = 0; camera.position.set(x + Math.sin(body.h) * 8, 2.7, z + Math.cos(body.h) * 8); },
+  sleep: () => { if (state === 'drive') pauseGame(); Sound.pause(); Voice.stop(); saveP(); },
   lookAt: (tx, tz, cx, cy, cz) => { G.lookAt = tx == null ? null : [tx, tz, cx, cy, cz]; },
   lockDbg: () => ({ held: lockHeld, heldFor: lockHeld ? Math.round(performance.now() - lockT0) : 0, state, lock: settings.lock, touches: Array.from(touches.values()), log: lockLog.slice() }),
   // Android back button: pause while driving, garage while paused, exit from the garage

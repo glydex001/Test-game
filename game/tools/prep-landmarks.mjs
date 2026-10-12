@@ -15,8 +15,15 @@ const LM = [
   { id: 'mall', ratio: 0.22, tex: 1024 },
   { id: 'house', ratio: 0.35, tex: 1024 },
   { id: 'showroom', ratio: 0.2, tex: 1024 },
+  { id: 'school', ratio: 0.5, tex: 1024 },
+  { id: 'engen', ratio: 0.3, tex: 512 },
+  { id: 'temple', ratio: 0.3, tex: 1024 },
+  { id: 'church', ratio: 0.5, tex: 1024 },
+  { id: 'bigmall', ratio: 0.5, tex: 1024 },
 ];
+const only = process.argv.slice(2);
 for (const cfg of LM) {
+  if (only.length && !only.includes(cfg.id)) continue;
   const doc = await io.read(`../lm/${cfg.id}-sam.glb`);
   await doc.transform(unpartition(), dedup(), prune(), weld());
   const scene = doc.getRoot().getDefaultScene() || doc.getRoot().listScenes()[0];
